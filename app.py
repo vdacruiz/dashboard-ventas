@@ -680,17 +680,18 @@ def sidebar_filters(df):
     año_act = st.sidebar.selectbox("Año", años, index=0)
     año_ant = año_act - 1
 
-    meses_disponibles = sorted(df[df['Año'] == año_act]['Mes'].unique())
+    meses_con_datos = sorted(df[df['Año'] == año_act]['Mes'].unique())
+    todos_meses = list(range(1, 13))
     modo_mes = st.sidebar.radio("Modo", ["Acumulado", "Mes individual"], horizontal=True)
 
     if modo_mes == "Acumulado":
-        mes_hasta = st.sidebar.selectbox("Acumulado hasta", meses_disponibles,
-                                          index=len(meses_disponibles)-1,
+        mes_hasta = st.sidebar.selectbox("Acumulado hasta", meses_con_datos,
+                                          index=len(meses_con_datos)-1,
                                           format_func=lambda x: MESES.get(x, str(x)))
         meses_sel = list(range(1, mes_hasta + 1))
     else:
-        mes_sel_unico = st.sidebar.selectbox("Mes", meses_disponibles,
-                                              index=len(meses_disponibles)-1,
+        mes_sel_unico = st.sidebar.selectbox("Mes", todos_meses,
+                                              index=max(meses_con_datos)-1 if meses_con_datos else 0,
                                               format_func=lambda x: MESES.get(x, str(x)))
         meses_sel = [mes_sel_unico]
 
