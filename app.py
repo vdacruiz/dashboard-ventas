@@ -501,9 +501,13 @@ def generar_analisis_completo(df_act, df_ant, año_act, año_ant):
     crecieron = mar_comp_f.dropna(subset=['var']).nlargest(3, 'var')
     cayeron = mar_comp_f.dropna(subset=['var']).nsmallest(3, 'var')
     if len(crecieron):
-        analisis.append(f"  Mayor crecimiento: {', '.join([f'{r.Marca} ({r.var:+.1%})' for _, r in crecieron.iterrows()])}")
+        parts = [f"{r['Marca']} ({r['var']:+.1%})" for _, r in crecieron.iterrows() if pd.notna(r['var'])]
+        if parts:
+            analisis.append(f"  Mayor crecimiento: {', '.join(parts)}")
     if len(cayeron):
-        analisis.append(f"  Mayor caida: {', '.join([f'{r.Marca} ({r.var:+.1%})' for _, r in cayeron.iterrows()])}")
+        parts = [f"{r['Marca']} ({r['var']:+.1%})" for _, r in cayeron.iterrows() if pd.notna(r['var'])]
+        if parts:
+            analisis.append(f"  Mayor caida: {', '.join(parts)}")
 
     # --- CONCENTRACIÓN DE CLIENTES ---
     analisis.append("")
