@@ -9,6 +9,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from io import BytesIO
 import hashlib
 import warnings
 warnings.filterwarnings('ignore')
@@ -73,13 +74,31 @@ st.markdown("""
         text-transform: uppercase; letter-spacing: 0.5px;
     }
 
-    /* Boton collapse sidebar (movil) */
+    /* Boton collapse/expand sidebar (movil) */
     button[data-testid="stSidebarCollapseButton"],
-    button[data-testid="collapsedControl"] {
+    button[data-testid="collapsedControl"],
+    [data-testid="stSidebar"] button[data-testid="stBaseButton-header"],
+    [data-testid="stSidebar"] button[data-testid="stBaseButton-headerNoPadding"],
+    [data-testid="stSidebar"] header button,
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="stSidebarNav"] button,
+    .stSidebar button[kind="header"] {
+        color: white !important;
+        background: rgba(255,255,255,0.2) !important;
+        border: 1px solid rgba(255,255,255,0.4) !important;
+        border-radius: 8px !important;
+    }
+    button[data-testid="stSidebarCollapseButton"]:hover,
+    [data-testid="stSidebar"] button[data-testid="stBaseButton-header"]:hover,
+    [data-testid="stSidebar"] header button:hover {
+        background: rgba(255,255,255,0.35) !important;
+    }
+    /* Boton expand sidebar cuando esta colapsado */
+    button[data-testid="collapsedControl"],
+    [data-testid="stSidebarCollapsedControl"] {
         color: #1B2A4A !important;
         background: #F2F2F2 !important;
         border: 1px solid #d0d5dd !important;
-        border-radius: 8px !important;
     }
 
     /* Header corporativo */
@@ -262,72 +281,109 @@ def auto_login():
         return True
     return False
 
-def save_session_js(user, token):
+def _persist_js(user, token):
+    """Inyecta JS que guarda credenciales en cookies + localStorage + IndexedDB."""
     import streamlit.components.v1 as components
     components.html(f"""
     <script>
+    (function() {{
         var u = '{user}', t = '{token}';
         var exp = new Date(Date.now() + 365*86400000).toUTCString();
-        document.cookie = 'va_user=' + u + ';expires=' + exp + ';path=/;SameSite=Lax';
-        document.cookie = 'va_token=' + t + ';expires=' + exp + ';path=/;SameSite=Lax';
-        try {{ window.parent.localStorage.setItem('va_user', u); }} catch(e) {{}}
-        try {{ window.parent.localStorage.setItem('va_token', t); }} catch(e) {{}}
-        try {{ localStorage.setItem('va_user', u); }} catch(e) {{}}
-        try {{ localStorage.setItem('va_token', t); }} catch(e) {{}}
+        var ck = function(n,v) {{
+            document.cookie = n+'='+v+';expires='+exp+';path=/;SameSite=Lax';
+            try {{ window.parent.document.cookie = n+'='+v+';expires='+exp+';path=/;SameSite=Lax'; }} catch(e) {{}}
+        }};
+        ck('va_user', u); ck('va_token', t);
+        try {{ localStorage.setItem('va_user', u); localStorage.setItem('va_token', t); }} catch(e) {{}}
+        try {{ window.parent.localStorage.setItem('va_user', u); window.parent.localStorage.setItem('va_token', t); }} catch(e) {{}}
         try {{
-            window.parent.document.cookie = 'va_user=' + u + ';expires=' + exp + ';path=/;SameSite=Lax';
-            window.parent.document.cookie = 'va_token=' + t + ';expires=' + exp + ';path=/;SameSite=Lax';
+            var r = indexedDB.open('va_session', 1);
+            r.onupgradeneeded = function(e) {{ e.target.result.createObjectStore('s'); }};
+            r.onsuccess = function(e) {{
+                var db = e.target.result;
+                var tx = db.transaction('s','readwrite');
+                tx.objectStore('s').put(u,'user');
+                tx.objectStore('s').put(t,'token');
+            }};
         }} catch(e) {{}}
-        var url = new URL(window.parent.location);
-        url.searchParams.set('user', u);
-        url.searchParams.set('token', t);
-        window.parent.location.href = url.toString();
+    }})();
     </script>
     """, height=0)
 
-def clear_session_js():
+def _clear_js():
+    """Limpia credenciales de todos los storages."""
     import streamlit.components.v1 as components
     components.html("""
     <script>
+    (function() {
         document.cookie = 'va_user=;path=/;max-age=0';
         document.cookie = 'va_token=;path=/;max-age=0';
         try { window.parent.document.cookie = 'va_user=;path=/;max-age=0'; } catch(e) {}
         try { window.parent.document.cookie = 'va_token=;path=/;max-age=0'; } catch(e) {}
-        try { window.parent.localStorage.removeItem('va_user'); } catch(e) {}
-        try { window.parent.localStorage.removeItem('va_token'); } catch(e) {}
-        try { localStorage.removeItem('va_user'); } catch(e) {}
-        try { localStorage.removeItem('va_token'); } catch(e) {}
+        try { localStorage.removeItem('va_user'); localStorage.removeItem('va_token'); } catch(e) {}
+        try { window.parent.localStorage.removeItem('va_user'); window.parent.localStorage.removeItem('va_token'); } catch(e) {}
+        try {
+            var r = indexedDB.open('va_session', 1);
+            r.onsuccess = function(e) {
+                var db = e.target.result;
+                if (db.objectStoreNames.contains('s')) {
+                    var tx = db.transaction('s','readwrite');
+                    tx.objectStore('s').delete('user');
+                    tx.objectStore('s').delete('token');
+                }
+            };
+        } catch(e) {}
+    })();
     </script>
     """, height=0)
 
-def check_local_storage():
+def _restore_js():
+    """Lee credenciales de cookies/localStorage/IndexedDB y redirige con query params."""
     import streamlit.components.v1 as components
     components.html("""
     <script>
-        var u = null, t = null;
-        try { u = window.parent.localStorage.getItem('va_user'); t = window.parent.localStorage.getItem('va_token'); } catch(e) {}
-        if (!u || !t) { try { u = u || localStorage.getItem('va_user'); t = t || localStorage.getItem('va_token'); } catch(e) {} }
-        if (!u || !t) {
-            function gc(name, src) {
-                var c = (src || document.cookie).split(';');
-                for (var i = 0; i < c.length; i++) {
-                    var p = c[i].trim().split('=');
-                    if (p[0] === name) return p[1];
+    (function() {
+        function gc(n, s) {
+            var c = (s || '').split(';');
+            for (var i = 0; i < c.length; i++) { var p = c[i].trim().split('='); if (p[0] === n) return p[1]; }
+            return null;
+        }
+        function redirect(u, t) {
+            if (u && t) {
+                var url = new URL(window.parent.location);
+                if (!url.searchParams.get('user')) {
+                    url.searchParams.set('user', u);
+                    url.searchParams.set('token', t);
+                    window.parent.location.replace(url.toString());
                 }
-                return null;
-            }
-            u = u || gc('va_user');
-            t = t || gc('va_token');
-            if (!u || !t) { try { u = u || gc('va_user', window.parent.document.cookie); t = t || gc('va_token', window.parent.document.cookie); } catch(e) {} }
-        }
-        if (u && t) {
-            var url = new URL(window.parent.location);
-            if (!url.searchParams.get('user')) {
-                url.searchParams.set('user', u);
-                url.searchParams.set('token', t);
-                window.parent.location.href = url.toString();
             }
         }
+        var u = null, t = null;
+        // 1. Cookies (iframe)
+        u = gc('va_user', document.cookie); t = gc('va_token', document.cookie);
+        // 2. Cookies (parent)
+        if (!u||!t) { try { u=u||gc('va_user',window.parent.document.cookie); t=t||gc('va_token',window.parent.document.cookie); } catch(e){} }
+        // 3. localStorage (iframe)
+        if (!u||!t) { try { u=u||localStorage.getItem('va_user'); t=t||localStorage.getItem('va_token'); } catch(e){} }
+        // 4. localStorage (parent)
+        if (!u||!t) { try { u=u||window.parent.localStorage.getItem('va_user'); t=t||window.parent.localStorage.getItem('va_token'); } catch(e){} }
+        if (u && t) { redirect(u, t); return; }
+        // 5. IndexedDB (async, ultimo recurso)
+        try {
+            var r = indexedDB.open('va_session', 1);
+            r.onupgradeneeded = function(e) { e.target.result.createObjectStore('s'); };
+            r.onsuccess = function(e) {
+                var db = e.target.result;
+                if (!db.objectStoreNames.contains('s')) return;
+                var tx = db.transaction('s','readonly');
+                var store = tx.objectStore('s');
+                var ru = store.get('user'), rt = store.get('token');
+                tx.oncomplete = function() {
+                    redirect(ru.result, rt.result);
+                };
+            };
+        } catch(e) {}
+    })();
     </script>
     """, height=0)
 
@@ -366,10 +422,8 @@ def login():
                     st.query_params["user"] = user_lower
                     st.query_params["token"] = token
                     if recordar:
-                        save_session_js(user_lower, token)
-                        st.stop()
-                    else:
-                        st.rerun()
+                        st.session_state['_persist'] = True
+                    st.rerun()
                 else:
                     st.error("Usuario o contraseña incorrectos")
 
@@ -1184,8 +1238,10 @@ if 'authenticated' not in st.session_state:
     st.session_state['authenticated'] = False
 
 if not st.session_state['authenticated']:
+    if st.session_state.pop('_clear', False):
+        _clear_js()
     if not auto_login():
-        check_local_storage()
+        _restore_js()
         login()
         st.stop()
 
@@ -1251,10 +1307,26 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
+
+def generar_excel(data, nombre_hoja="Datos"):
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine='openpyxl') as w:
+        data.to_excel(w, sheet_name=nombre_hoja, index=False)
+    return buf.getvalue()
+
+excel_data = generar_excel(df_act, "Venta Nacional")
+st.sidebar.download_button(
+    label="📥 Descargar Excel",
+    data=excel_data,
+    file_name=f"venta_nacional_{año_act}_{nombre_usuario.replace(' ','_')}.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    use_container_width=True,
+)
+
 st.sidebar.markdown("")
 if st.sidebar.button("🔒 Cerrar Sesion", type="primary"):
-    clear_session_js()
-    for key in ['authenticated', 'user', 'rol', 'nombre', 'ejecutivo']:
+    st.session_state['_clear'] = True
+    for key in ['authenticated', 'user', 'rol', 'nombre', 'ejecutivo', '_persist']:
         st.session_state.pop(key, None)
     st.query_params.clear()
     st.rerun()
@@ -1266,3 +1338,6 @@ st.sidebar.markdown(f"""
     <div style="font-size:9px; color:#6B7B8D; margin-top:8px;">{nombre_usuario}</div>
 </div>
 """, unsafe_allow_html=True)
+
+if st.session_state.pop('_persist', False):
+    _persist_js(st.session_state['user'], make_token(st.session_state['user']))
