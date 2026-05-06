@@ -28,7 +28,7 @@ st.set_page_config(
 )
 
 import pathlib
-_logo_path = pathlib.Path(__file__).parent / "logo_vda.jpg"
+_logo_path = pathlib.Path(__file__).parent / "logo_vda.png"
 LOGO_B64 = base64.b64encode(_logo_path.read_bytes()).decode() if _logo_path.exists() else ""
 
 GOOGLE_SHEET_ID = "1mtythtz8KLzrP-MoSFbCJvCQApEbRbzA1LAF2Synz1A"
@@ -376,7 +376,7 @@ def login():
     <div style="background:linear-gradient(135deg,#0D1B2A,#1B2A4A,#2E5090);
         padding:40px 50px; border-radius:20px; text-align:center; max-width:420px;
         box-shadow:0 20px 60px rgba(0,0,0,0.3);">
-        <img src="data:image/jpeg;base64,{LOGO_B64}" style="height:80px;margin-bottom:10px;" alt="VDA">
+        <img src="data:image/png;base64,{LOGO_B64}" style="height:100px;margin-bottom:10px;border-radius:12px;background:white;padding:8px 14px;" alt="VDA">
         <div style="font-size:14px; color:#C9960C; margin-top:8px; font-weight:600;">Dashboard Venta Nacional</div>
     </div>
     </div>
@@ -1343,7 +1343,7 @@ else:
 
 st.markdown(f"""
 <div class="corp-header" style="display:flex;align-items:center;gap:20px;">
-    <img src="data:image/jpeg;base64,{LOGO_B64}" style="height:60px;border-radius:8px;flex-shrink:0;" alt="VDA">
+    <img src="data:image/png;base64,{LOGO_B64}" style="height:75px;border-radius:10px;background:white;padding:6px 10px;flex-shrink:0;" alt="VDA">
     <div>
         <h1>{titulo_header}</h1>
         <div class="subtitle">{subtitulo}</div>
@@ -1404,7 +1404,7 @@ if st.sidebar.button("🔒 Cerrar Sesion", type="primary"):
 
 st.sidebar.markdown(f"""
 <div style="text-align:center; padding:10px;">
-    <img src="data:image/jpeg;base64,{LOGO_B64}" style="height:45px;margin-bottom:6px;" alt="VDA">
+    <img src="data:image/png;base64,{LOGO_B64}" style="height:45px;margin-bottom:6px;border-radius:6px;background:white;padding:3px 6px;" alt="VDA">
     <div style="font-size:9px; color:#6B7B8D; margin-top:4px;">{nombre_usuario}</div>
 </div>
 """, unsafe_allow_html=True)
