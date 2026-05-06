@@ -180,7 +180,7 @@ def cargar_datos():
                 df[col] = df[col].apply(limpiar_numero)
 
     num_cols = [
-        'Cantidad_Final', 'Cajas_Final', 'Neto_Final', 'Costo PRD',
+        'Cantidad_Final', 'Cajas Totales', 'Neto_Final', 'Costo PRD',
         'Costo Rappel', 'Rappel x3', 'Bonificacion Casal', 'Costo Total',
         'Utilidad', 'Mg_Pct', 'Util_Unitaria', 'Unid_x_Caja',
         'Año', 'Mes'
@@ -231,10 +231,6 @@ def limpiar_numero(val):
 def fmt_m(val):
     if pd.isna(val) or val == 0:
         return "$0"
-    if abs(val) >= 1e9:
-        return f"${val/1e9:,.1f}B"
-    if abs(val) >= 1e6:
-        return f"${val/1e6:,.1f}MM"
     return f"${val:,.0f}"
 
 def fmt_n(val):
@@ -291,17 +287,17 @@ def tabla_comparativa(df_act, df_ant, group_col, metrics_config):
 
 def build_comparison_df(df_act, df_ant, group_col, año_act, año_ant):
     """Construye DataFrame comparativo completo para mostrar."""
-    sum_cols = ['Cajas_Final', 'Neto_Final', 'Costo Total', 'Utilidad']
+    sum_cols = ['Cajas Totales', 'Neto_Final', 'Costo Total', 'Utilidad']
 
     g_act = df_act.groupby(group_col).agg(
-        Cajas=('Cajas_Final', 'sum'),
+        Cajas=('Cajas Totales', 'sum'),
         Neto=('Neto_Final', 'sum'),
         Costo=('Costo Total', 'sum'),
         Utilidad=('Utilidad', 'sum'),
     ).reset_index() if len(df_act) > 0 else pd.DataFrame(columns=[group_col, 'Cajas', 'Neto', 'Costo', 'Utilidad'])
 
     g_ant = df_ant.groupby(group_col).agg(
-        Cajas=('Cajas_Final', 'sum'),
+        Cajas=('Cajas Totales', 'sum'),
         Neto=('Neto_Final', 'sum'),
         Costo=('Costo Total', 'sum'),
         Utilidad=('Utilidad', 'sum'),
@@ -370,7 +366,7 @@ def render_comparison_table(comp_df, group_col, año_act, año_ant, sort_by=None
 def build_super_detail(df_act, df_ant, group_col, año_act, año_ant):
     """Tabla especial Supermercado con desglose Costo PRD, Rappel, etc."""
     agg = {
-        'Cantidad_Final': 'sum', 'Cajas_Final': 'sum', 'Neto_Final': 'sum',
+        'Cantidad_Final': 'sum', 'Cajas Totales': 'sum', 'Neto_Final': 'sum',
         'Costo PRD': 'sum', 'Costo Rappel': 'sum', 'Rappel x3': 'sum',
         'Bonificacion Casal': 'sum',
     }
@@ -389,7 +385,7 @@ def build_super_detail(df_act, df_ant, group_col, año_act, año_ant):
     if len(g_act) > 0:
         display[group_col] = g_act[group_col]
         display['Unidades'] = g_act['Cantidad_Final'].apply(fmt_n)
-        display['Cajas'] = g_act['Cajas_Final'].apply(fmt_n)
+        display['Cajas'] = g_act['Cajas Totales'].apply(fmt_n)
         display['Neto'] = g_act['Neto_Final'].apply(fmt_m)
         display['Costo PRD'] = g_act['Costo PRD'].apply(fmt_m)
         display['Rappel'] = g_act['Costo Rappel'].apply(fmt_m)
@@ -458,8 +454,8 @@ def sidebar_filters(df):
 # KPI ROW
 # ============================================================
 def render_kpis(df_act, df_ant):
-    cajas_a = df_act['Cajas_Final'].sum()
-    cajas_b = df_ant['Cajas_Final'].sum()
+    cajas_a = df_act['Cajas Totales'].sum()
+    cajas_b = df_ant['Cajas Totales'].sum()
     neto_a = df_act['Neto_Final'].sum()
     neto_b = df_ant['Neto_Final'].sum()
     costo_a = df_act['Costo Total'].sum()
@@ -783,7 +779,7 @@ df_act, df_ant, año_act, año_ant, meses_sel = sidebar_filters(df)
 meses_txt = f"{MESES[meses_sel[0]]} a {MESES[meses_sel[-1]]}" if len(meses_sel) > 1 else MESES[meses_sel[0]]
 n_reg = len(df_act)
 n_cli = df_act['Razon Social'].nunique()
-total_cajas = df_act['Cajas_Final'].sum()
+total_cajas = df_act['Cajas Totales'].sum()
 
 st.markdown(f"""
 <div class="corp-header">
