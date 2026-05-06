@@ -73,6 +73,15 @@ st.markdown("""
         text-transform: uppercase; letter-spacing: 0.5px;
     }
 
+    /* Boton collapse sidebar (movil) */
+    button[data-testid="stSidebarCollapseButton"],
+    button[data-testid="collapsedControl"] {
+        color: #1B2A4A !important;
+        background: #F2F2F2 !important;
+        border: 1px solid #d0d5dd !important;
+        border-radius: 8px !important;
+    }
+
     /* Header corporativo */
     .corp-header {
         background: linear-gradient(135deg, #0D1B2A, #1B2A4A, #2E5090);
