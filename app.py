@@ -57,6 +57,9 @@ st.markdown("""
     [data-testid="stSidebar"] [data-baseweb="select"] input,
     [data-testid="stSidebar"] option { color: #1B2A4A !important; }
     [data-testid="stSidebar"] button { color: white !important; border-color: rgba(255,255,255,0.3) !important; }
+    [data-testid="stSidebar"] [role="radiogroup"] label span,
+    [data-testid="stSidebar"] [role="radiogroup"] label p,
+    [data-testid="stSidebar"] .stRadio label span { color: white !important; }
     [data-testid="stSidebar"] .stSelectbox label,
     [data-testid="stSidebar"] .stMultiSelect label,
     [data-testid="stSidebar"] .stDateInput label {
@@ -441,6 +444,25 @@ def render_comparison_table(comp_df, group_col, año_act, año_ant, sort_by=None
     display['Var% Cajas'] = comp_df['Var%_Cajas'].apply(lambda x: f"{x:+.1%}" if pd.notna(x) else "-")
     display['Var% Neto'] = comp_df['Var%_Neto'].apply(lambda x: f"{x:+.1%}" if pd.notna(x) else "-")
     display['Var% Util'] = comp_df['Var%_Utilidad'].apply(lambda x: f"{x:+.1%}" if pd.notna(x) else "-")
+
+    total = {group_col: 'TOTAL'}
+    total[f'Cajas {año_act}'] = fmt_n(comp_df[f'Cajas_{año_act}'].sum())
+    total[f'Vta Neta {año_act}'] = fmt_m(comp_df[f'Neto_{año_act}'].sum())
+    total[f'Costo {año_act}'] = fmt_m(comp_df[f'Costo_{año_act}'].sum())
+    total[f'Utilidad {año_act}'] = fmt_m(comp_df[f'Utilidad_{año_act}'].sum())
+    tn = comp_df[f'Neto_{año_act}'].sum()
+    tu = comp_df[f'Utilidad_{año_act}'].sum()
+    total[f'Mg% {año_act}'] = fmt_pct(tu / tn if tn else 0)
+    total[f'Cajas {año_ant}'] = fmt_n(comp_df[f'Cajas_{año_ant}'].sum())
+    total[f'Vta Neta {año_ant}'] = fmt_m(comp_df[f'Neto_{año_ant}'].sum())
+    total[f'Utilidad {año_ant}'] = fmt_m(comp_df[f'Utilidad_{año_ant}'].sum())
+    tn_b = comp_df[f'Neto_{año_ant}'].sum()
+    tu_b = comp_df[f'Utilidad_{año_ant}'].sum()
+    total[f'Mg% {año_ant}'] = fmt_pct(tu_b / tn_b if tn_b else 0)
+    total['Var% Cajas'] = f"{var_pct(comp_df[f'Cajas_{año_act}'].sum(), comp_df[f'Cajas_{año_ant}'].sum()):+.1%}" if comp_df[f'Cajas_{año_ant}'].sum() else "-"
+    total['Var% Neto'] = f"{var_pct(tn, tn_b):+.1%}" if tn_b else "-"
+    total['Var% Util'] = f"{var_pct(tu, tu_b):+.1%}" if tu_b else "-"
+    display = pd.concat([display, pd.DataFrame([total])], ignore_index=True)
 
     st.dataframe(display, use_container_width=True, hide_index=True)
 
