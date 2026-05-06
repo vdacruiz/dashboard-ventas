@@ -55,6 +55,7 @@ st.markdown("""
     [data-testid="stSidebar"] [data-baseweb="select"] span,
     [data-testid="stSidebar"] [data-baseweb="select"] input,
     [data-testid="stSidebar"] option { color: #1B2A4A !important; }
+    [data-testid="stSidebar"] button { color: white !important; border-color: rgba(255,255,255,0.3) !important; }
     [data-testid="stSidebar"] .stSelectbox label,
     [data-testid="stSidebar"] .stMultiSelect label,
     [data-testid="stSidebar"] .stDateInput label {
