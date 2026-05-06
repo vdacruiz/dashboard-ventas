@@ -253,7 +253,7 @@ def kpi_card(label, value, delta=None, prefix="", suffix="", card_class=""):
     if delta is not None and not pd.isna(delta):
         cls = "kpi-delta-pos" if delta >= 0 else "kpi-delta-neg"
         arrow = "▲" if delta >= 0 else "▼"
-        delta_html = f'<div style="margin-top:6px"><span class="{cls}">{arrow} {abs(delta):.0%}</span> <span style="font-size:10px;color:#999">vs año ant.</span></div>'
+        delta_html = f'<div style="margin-top:6px"><span class="{cls}">{arrow} {abs(delta):.1%}</span> <span style="font-size:10px;color:#999">vs año ant.</span></div>'
     extra = f" {card_class}" if card_class else ""
     st.markdown(f"""
     <div class="kpi-card{extra}">
