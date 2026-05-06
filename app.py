@@ -9,6 +9,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import hashlib
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -216,6 +217,11 @@ USUARIOS = {
     'dhernandez':  {'rol': 'ejecutivo', 'nombre': 'D. Hernández',  'ejecutivo': 'DHernández'},
 }
 
+TOKEN_SECRET = "va_dashboard_2026"
+
+def make_token(user):
+    return hashlib.sha256(f"{user}:{TOKEN_SECRET}".encode()).hexdigest()[:16]
+
 def verificar_password(user, pwd):
     try:
         passwords = st.secrets["passwords"]
@@ -224,6 +230,19 @@ def verificar_password(user, pwd):
         defaults = {'admin': 'Vda2026*', 'jmmontenegro': 'juan2026',
                     'cossa': 'ossa2026', 'dhernandez': 'dhernandez2026'}
         return defaults.get(user) == pwd
+
+def auto_login():
+    params = st.query_params
+    token = params.get("token", "")
+    user = params.get("user", "")
+    if user and token and user in USUARIOS and make_token(user) == token:
+        st.session_state['authenticated'] = True
+        st.session_state['user'] = user
+        st.session_state['rol'] = USUARIOS[user]['rol']
+        st.session_state['nombre'] = USUARIOS[user]['nombre']
+        st.session_state['ejecutivo'] = USUARIOS[user]['ejecutivo']
+        return True
+    return False
 
 def login():
     st.markdown("""
@@ -244,6 +263,7 @@ def login():
         with st.form("login_form"):
             usuario = st.text_input("Usuario", placeholder="Ingrese su usuario")
             password = st.text_input("Contraseña", type="password", placeholder="Ingrese su contraseña")
+            recordar = st.checkbox("Recordar sesion")
             submit = st.form_submit_button("Ingresar", use_container_width=True)
 
             if submit:
@@ -254,6 +274,9 @@ def login():
                     st.session_state['rol'] = USUARIOS[user_lower]['rol']
                     st.session_state['nombre'] = USUARIOS[user_lower]['nombre']
                     st.session_state['ejecutivo'] = USUARIOS[user_lower]['ejecutivo']
+                    if recordar:
+                        st.query_params["user"] = user_lower
+                        st.query_params["token"] = make_token(user_lower)
                     st.rerun()
                 else:
                     st.error("Usuario o contraseña incorrectos")
@@ -1046,8 +1069,9 @@ if 'authenticated' not in st.session_state:
     st.session_state['authenticated'] = False
 
 if not st.session_state['authenticated']:
-    login()
-    st.stop()
+    if not auto_login():
+        login()
+        st.stop()
 
 rol = st.session_state['rol']
 nombre_usuario = st.session_state['nombre']
@@ -1114,6 +1138,7 @@ st.sidebar.markdown("---")
 if st.sidebar.button("Cerrar Sesion"):
     for key in ['authenticated', 'user', 'rol', 'nombre', 'ejecutivo']:
         st.session_state.pop(key, None)
+    st.query_params.clear()
     st.rerun()
 
 st.sidebar.markdown(f"""
