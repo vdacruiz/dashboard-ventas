@@ -236,7 +236,7 @@ def verificar_password(user, pwd):
         passwords = st.secrets["passwords"]
         return passwords.get(user) == pwd
     except Exception:
-        defaults = {'admin': 'Vda2026*', 'jmmontenegro': 'juan2026',
+        defaults = {'admin': 'vda2026', 'jmmontenegro': 'juan2026',
                     'cossa': 'ossa2026', 'dhernandez': 'dhernandez2026'}
         return defaults.get(user) == pwd
 
@@ -257,9 +257,22 @@ def save_session_js(user, token):
     import streamlit.components.v1 as components
     components.html(f"""
     <script>
-        localStorage.setItem('va_user', '{user}');
-        localStorage.setItem('va_token', '{token}');
-        window.parent.location.reload();
+        var u = '{user}', t = '{token}';
+        var exp = new Date(Date.now() + 365*86400000).toUTCString();
+        document.cookie = 'va_user=' + u + ';expires=' + exp + ';path=/;SameSite=Lax';
+        document.cookie = 'va_token=' + t + ';expires=' + exp + ';path=/;SameSite=Lax';
+        try {{ window.parent.localStorage.setItem('va_user', u); }} catch(e) {{}}
+        try {{ window.parent.localStorage.setItem('va_token', t); }} catch(e) {{}}
+        try {{ localStorage.setItem('va_user', u); }} catch(e) {{}}
+        try {{ localStorage.setItem('va_token', t); }} catch(e) {{}}
+        try {{
+            window.parent.document.cookie = 'va_user=' + u + ';expires=' + exp + ';path=/;SameSite=Lax';
+            window.parent.document.cookie = 'va_token=' + t + ';expires=' + exp + ';path=/;SameSite=Lax';
+        }} catch(e) {{}}
+        var url = new URL(window.parent.location);
+        url.searchParams.set('user', u);
+        url.searchParams.set('token', t);
+        window.parent.location.href = url.toString();
     </script>
     """, height=0)
 
@@ -267,8 +280,14 @@ def clear_session_js():
     import streamlit.components.v1 as components
     components.html("""
     <script>
-        localStorage.removeItem('va_user');
-        localStorage.removeItem('va_token');
+        document.cookie = 'va_user=;path=/;max-age=0';
+        document.cookie = 'va_token=;path=/;max-age=0';
+        try { window.parent.document.cookie = 'va_user=;path=/;max-age=0'; } catch(e) {}
+        try { window.parent.document.cookie = 'va_token=;path=/;max-age=0'; } catch(e) {}
+        try { window.parent.localStorage.removeItem('va_user'); } catch(e) {}
+        try { window.parent.localStorage.removeItem('va_token'); } catch(e) {}
+        try { localStorage.removeItem('va_user'); } catch(e) {}
+        try { localStorage.removeItem('va_token'); } catch(e) {}
     </script>
     """, height=0)
 
@@ -276,13 +295,27 @@ def check_local_storage():
     import streamlit.components.v1 as components
     components.html("""
     <script>
-        const user = localStorage.getItem('va_user');
-        const token = localStorage.getItem('va_token');
-        if (user && token) {
-            const url = new URL(window.parent.location);
+        var u = null, t = null;
+        try { u = window.parent.localStorage.getItem('va_user'); t = window.parent.localStorage.getItem('va_token'); } catch(e) {}
+        if (!u || !t) { try { u = u || localStorage.getItem('va_user'); t = t || localStorage.getItem('va_token'); } catch(e) {} }
+        if (!u || !t) {
+            function gc(name, src) {
+                var c = (src || document.cookie).split(';');
+                for (var i = 0; i < c.length; i++) {
+                    var p = c[i].trim().split('=');
+                    if (p[0] === name) return p[1];
+                }
+                return null;
+            }
+            u = u || gc('va_user');
+            t = t || gc('va_token');
+            if (!u || !t) { try { u = u || gc('va_user', window.parent.document.cookie); t = t || gc('va_token', window.parent.document.cookie); } catch(e) {} }
+        }
+        if (u && t) {
+            var url = new URL(window.parent.location);
             if (!url.searchParams.get('user')) {
-                url.searchParams.set('user', user);
-                url.searchParams.set('token', token);
+                url.searchParams.set('user', u);
+                url.searchParams.set('token', t);
                 window.parent.location.href = url.toString();
             }
         }
@@ -306,13 +339,14 @@ def login():
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
         with st.form("login_form"):
-            usuario = st.text_input("Usuario", placeholder="Ingrese su usuario")
+            opciones = {v['nombre']: k for k, v in USUARIOS.items()}
+            nombre_sel = st.selectbox("Usuario", list(opciones.keys()))
             password = st.text_input("Contraseña", type="password", placeholder="Ingrese su contraseña")
             recordar = st.checkbox("Recordar sesion")
             submit = st.form_submit_button("Ingresar", use_container_width=True)
 
             if submit:
-                user_lower = usuario.strip().lower()
+                user_lower = opciones[nombre_sel]
                 if user_lower in USUARIOS and verificar_password(user_lower, password):
                     st.session_state['authenticated'] = True
                     st.session_state['user'] = user_lower
