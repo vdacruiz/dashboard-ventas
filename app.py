@@ -1343,7 +1343,7 @@ else:
 
 st.markdown(f"""
 <div class="corp-header" style="display:flex;align-items:center;gap:20px;">
-    <img src="data:image/png;base64,{LOGO_B64}" style="height:75px;border-radius:10px;background:white;padding:6px 10px;flex-shrink:0;" alt="VDA">
+    <img src="data:image/png;base64,{LOGO_B64}" style="height:100px;border-radius:10px;background:white;padding:8px 12px;flex-shrink:0;" alt="VDA">
     <div>
         <h1>{titulo_header}</h1>
         <div class="subtitle">{subtitulo}</div>
