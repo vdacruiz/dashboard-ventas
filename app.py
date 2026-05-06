@@ -554,8 +554,14 @@ def build_comparison_df(df_act, df_ant, group_col, año_act, año_ant):
     return pd.DataFrame(rows)
 
 
+def _var_cell(val):
+    if pd.isna(val):
+        return '<span style="color:#999">-</span>'
+    color = '#27AE60' if val >= 0 else '#E74C3C'
+    arrow = '&#9650;' if val >= 0 else '&#9660;'
+    return f'<span style="color:{color};font-weight:700">{arrow} {abs(val):.1%}</span>'
+
 def render_comparison_table(comp_df, group_col, año_act, año_ant, sort_by=None):
-    """Renderiza tabla comparativa formateada."""
     if len(comp_df) == 0:
         st.info("Sin datos para este período")
         return
@@ -563,41 +569,81 @@ def render_comparison_table(comp_df, group_col, año_act, año_ant, sort_by=None
     if sort_by and sort_by in comp_df.columns:
         comp_df = comp_df.sort_values(sort_by, ascending=False)
 
-    display = pd.DataFrame()
-    display[group_col] = comp_df[group_col]
-    display[f'Cajas {año_act}'] = comp_df[f'Cajas_{año_act}'].apply(fmt_n)
-    display[f'Vta Neta {año_act}'] = comp_df[f'Neto_{año_act}'].apply(fmt_m)
-    display[f'Costo {año_act}'] = comp_df[f'Costo_{año_act}'].apply(fmt_m)
-    display[f'Utilidad {año_act}'] = comp_df[f'Utilidad_{año_act}'].apply(fmt_m)
-    display[f'Mg% {año_act}'] = comp_df[f'Mg_{año_act}'].apply(fmt_pct)
-    display[f'Cajas {año_ant}'] = comp_df[f'Cajas_{año_ant}'].apply(fmt_n)
-    display[f'Vta Neta {año_ant}'] = comp_df[f'Neto_{año_ant}'].apply(fmt_m)
-    display[f'Utilidad {año_ant}'] = comp_df[f'Utilidad_{año_ant}'].apply(fmt_m)
-    display[f'Mg% {año_ant}'] = comp_df[f'Mg_{año_ant}'].apply(fmt_pct)
-    display['Var% Cajas'] = comp_df['Var%_Cajas'].apply(lambda x: f"{x:+.1%}" if pd.notna(x) else "-")
-    display['Var% Neto'] = comp_df['Var%_Neto'].apply(lambda x: f"{x:+.1%}" if pd.notna(x) else "-")
-    display['Var% Util'] = comp_df['Var%_Utilidad'].apply(lambda x: f"{x:+.1%}" if pd.notna(x) else "-")
-
-    total = {group_col: 'TOTAL'}
-    total[f'Cajas {año_act}'] = fmt_n(comp_df[f'Cajas_{año_act}'].sum())
-    total[f'Vta Neta {año_act}'] = fmt_m(comp_df[f'Neto_{año_act}'].sum())
-    total[f'Costo {año_act}'] = fmt_m(comp_df[f'Costo_{año_act}'].sum())
-    total[f'Utilidad {año_act}'] = fmt_m(comp_df[f'Utilidad_{año_act}'].sum())
     tn = comp_df[f'Neto_{año_act}'].sum()
     tu = comp_df[f'Utilidad_{año_act}'].sum()
-    total[f'Mg% {año_act}'] = fmt_pct(tu / tn if tn else 0)
-    total[f'Cajas {año_ant}'] = fmt_n(comp_df[f'Cajas_{año_ant}'].sum())
-    total[f'Vta Neta {año_ant}'] = fmt_m(comp_df[f'Neto_{año_ant}'].sum())
-    total[f'Utilidad {año_ant}'] = fmt_m(comp_df[f'Utilidad_{año_ant}'].sum())
+    tc = comp_df[f'Costo_{año_act}'].sum()
     tn_b = comp_df[f'Neto_{año_ant}'].sum()
     tu_b = comp_df[f'Utilidad_{año_ant}'].sum()
-    total[f'Mg% {año_ant}'] = fmt_pct(tu_b / tn_b if tn_b else 0)
-    total['Var% Cajas'] = f"{var_pct(comp_df[f'Cajas_{año_act}'].sum(), comp_df[f'Cajas_{año_ant}'].sum()):+.1%}" if comp_df[f'Cajas_{año_ant}'].sum() else "-"
-    total['Var% Neto'] = f"{var_pct(tn, tn_b):+.1%}" if tn_b else "-"
-    total['Var% Util'] = f"{var_pct(tu, tu_b):+.1%}" if tu_b else "-"
-    display = pd.concat([display, pd.DataFrame([total])], ignore_index=True)
+    tca = comp_df[f'Cajas_{año_act}'].sum()
+    tca_b = comp_df[f'Cajas_{año_ant}'].sum()
 
-    st.dataframe(display, use_container_width=True, hide_index=True)
+    hdr = f'''<table style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;font-size:12px;">
+    <thead>
+    <tr style="background:#0D1B2A;color:white;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">
+        <th style="padding:10px 12px;text-align:left;border-radius:8px 0 0 0;" rowspan="2">{group_col}</th>
+        <th style="padding:10px 8px;text-align:center;border-left:2px solid #2E5090;" colspan="5">{año_act}</th>
+        <th style="padding:10px 8px;text-align:center;border-left:2px solid #4472C4;" colspan="4">{año_ant}</th>
+        <th style="padding:10px 8px;text-align:center;border-left:2px solid #C9960C;border-radius:0 8px 0 0;" colspan="3">Variacion %</th>
+    </tr>
+    <tr style="background:#1B2A4A;color:#87CEEB;font-size:9px;letter-spacing:0.3px;">
+        <th style="padding:6px 8px;border-left:2px solid #2E5090;">Cajas</th>
+        <th style="padding:6px 8px;">Vta Neta</th>
+        <th style="padding:6px 8px;">Costo</th>
+        <th style="padding:6px 8px;">Utilidad</th>
+        <th style="padding:6px 8px;">Mg%</th>
+        <th style="padding:6px 8px;border-left:2px solid #4472C4;">Cajas</th>
+        <th style="padding:6px 8px;">Vta Neta</th>
+        <th style="padding:6px 8px;">Utilidad</th>
+        <th style="padding:6px 8px;">Mg%</th>
+        <th style="padding:6px 8px;border-left:2px solid #C9960C;">Cajas</th>
+        <th style="padding:6px 8px;">Neto</th>
+        <th style="padding:6px 8px;">Util</th>
+    </tr>
+    </thead><tbody>'''
+
+    rows_html = []
+    for i, (_, r) in enumerate(comp_df.iterrows()):
+        bg = '#F8FAFC' if i % 2 == 0 else '#FFFFFF'
+        vc = _var_cell(r.get(f'Var%_Cajas'))
+        vn = _var_cell(r.get(f'Var%_Neto'))
+        vu = _var_cell(r.get(f'Var%_Utilidad'))
+        rows_html.append(f'''<tr style="background:{bg};border-bottom:1px solid #EDF2F7;">
+            <td style="padding:9px 12px;font-weight:600;color:#1B2A4A;white-space:nowrap;">{r[group_col]}</td>
+            <td style="padding:9px 8px;text-align:right;border-left:2px solid #EDF2F7;">{fmt_n(r[f"Cajas_{año_act}"])}</td>
+            <td style="padding:9px 8px;text-align:right;">{fmt_m(r[f"Neto_{año_act}"])}</td>
+            <td style="padding:9px 8px;text-align:right;color:#95A5A6;">{fmt_m(r[f"Costo_{año_act}"])}</td>
+            <td style="padding:9px 8px;text-align:right;font-weight:600;">{fmt_m(r[f"Utilidad_{año_act}"])}</td>
+            <td style="padding:9px 8px;text-align:right;">{fmt_pct(r[f"Mg_{año_act}"])}</td>
+            <td style="padding:9px 8px;text-align:right;border-left:2px solid #EDF2F7;color:#6B7B8D;">{fmt_n(r[f"Cajas_{año_ant}"])}</td>
+            <td style="padding:9px 8px;text-align:right;color:#6B7B8D;">{fmt_m(r[f"Neto_{año_ant}"])}</td>
+            <td style="padding:9px 8px;text-align:right;color:#6B7B8D;">{fmt_m(r[f"Utilidad_{año_ant}"])}</td>
+            <td style="padding:9px 8px;text-align:right;color:#6B7B8D;">{fmt_pct(r[f"Mg_{año_ant}"])}</td>
+            <td style="padding:9px 8px;text-align:center;border-left:2px solid #EDF2F7;">{vc}</td>
+            <td style="padding:9px 8px;text-align:center;">{vn}</td>
+            <td style="padding:9px 8px;text-align:center;">{vu}</td>
+        </tr>''')
+
+    vc_t = _var_cell(var_pct(tca, tca_b))
+    vn_t = _var_cell(var_pct(tn, tn_b))
+    vu_t = _var_cell(var_pct(tu, tu_b))
+    total_row = f'''<tr style="background:linear-gradient(90deg,#0D1B2A,#1B2A4A);color:white;font-weight:700;font-size:12px;">
+        <td style="padding:11px 12px;border-radius:0 0 0 8px;">TOTAL</td>
+        <td style="padding:11px 8px;text-align:right;border-left:2px solid #2E5090;">{fmt_n(tca)}</td>
+        <td style="padding:11px 8px;text-align:right;">{fmt_m(tn)}</td>
+        <td style="padding:11px 8px;text-align:right;opacity:0.7;">{fmt_m(tc)}</td>
+        <td style="padding:11px 8px;text-align:right;">{fmt_m(tu)}</td>
+        <td style="padding:11px 8px;text-align:right;">{fmt_pct(tu/tn if tn else 0)}</td>
+        <td style="padding:11px 8px;text-align:right;border-left:2px solid #4472C4;opacity:0.7;">{fmt_n(tca_b)}</td>
+        <td style="padding:11px 8px;text-align:right;opacity:0.7;">{fmt_m(tn_b)}</td>
+        <td style="padding:11px 8px;text-align:right;opacity:0.7;">{fmt_m(tu_b)}</td>
+        <td style="padding:11px 8px;text-align:right;opacity:0.7;">{fmt_pct(tu_b/tn_b if tn_b else 0)}</td>
+        <td style="padding:11px 8px;text-align:center;border-left:2px solid #C9960C;">{vc_t}</td>
+        <td style="padding:11px 8px;text-align:center;">{vn_t}</td>
+        <td style="padding:11px 8px;text-align:center;border-radius:0 0 8px 0;">{vu_t}</td>
+    </tr>'''
+
+    html = hdr + '\n'.join(rows_html) + total_row + '</tbody></table>'
+    st.markdown(f'<div style="overflow-x:auto;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,0.08);margin:8px 0 16px 0;">{html}</div>', unsafe_allow_html=True)
 
 
 def build_super_detail(df_act, df_ant, group_col, año_act, año_ant):
@@ -618,19 +664,58 @@ def build_super_detail(df_act, df_ant, group_col, año_act, año_ant):
         g_ant['Mg'] = np.where(g_ant['Neto_Final'] != 0,
             (g_ant['Neto_Final'] + g_ant['Costo PRD'] + g_ant['Costo Rappel'] + g_ant['Rappel x3'] + g_ant['Bonificacion Casal']) / g_ant['Neto_Final'], 0)
 
-    display = pd.DataFrame()
-    if len(g_act) > 0:
-        display[group_col] = g_act[group_col]
-        display['Unidades'] = g_act['Cantidad_Final'].apply(fmt_n)
-        display['Cajas'] = g_act['Cajas Totales'].apply(fmt_n)
-        display['Neto'] = g_act['Neto_Final'].apply(fmt_m)
-        display['Costo PRD'] = g_act['Costo PRD'].apply(fmt_m)
-        display['Rappel'] = g_act['Costo Rappel'].apply(fmt_m)
-        display['Rappel x3'] = g_act['Rappel x3'].apply(fmt_m)
-        display['Bonif.'] = g_act['Bonificacion Casal'].apply(fmt_m)
-        display['% Mg'] = g_act['Mg'].apply(fmt_pct)
+    if len(g_act) == 0:
+        st.info("Sin datos para este período")
+        return
 
-    st.dataframe(display, use_container_width=True, hide_index=True)
+    cols = [group_col, 'Unid.', 'Cajas', 'Neto', 'Costo PRD', 'Rappel', 'Rappel x3', 'Bonif.', 'Mg%']
+    hdr = f'''<table style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;font-size:12px;">
+    <thead><tr style="background:#0D1B2A;color:white;text-transform:uppercase;letter-spacing:0.5px;font-size:10px;">
+        <th style="padding:10px 12px;text-align:left;border-radius:8px 0 0 0;">{group_col}</th>
+        <th style="padding:10px 8px;text-align:right;">Unid.</th>
+        <th style="padding:10px 8px;text-align:right;">Cajas</th>
+        <th style="padding:10px 8px;text-align:right;">Neto</th>
+        <th style="padding:10px 8px;text-align:right;border-left:2px solid #2E5090;">Costo PRD</th>
+        <th style="padding:10px 8px;text-align:right;">Rappel</th>
+        <th style="padding:10px 8px;text-align:right;">Rappel x3</th>
+        <th style="padding:10px 8px;text-align:right;">Bonif.</th>
+        <th style="padding:10px 8px;text-align:right;border-radius:0 8px 0 0;">Mg%</th>
+    </tr></thead><tbody>'''
+
+    rows_html = []
+    for i, (_, r) in enumerate(g_act.sort_values('Neto_Final', ascending=False).iterrows()):
+        bg = '#F8FAFC' if i % 2 == 0 else '#FFFFFF'
+        mg_val = r['Mg']
+        mg_color = '#27AE60' if mg_val >= 0.25 else ('#E74C3C' if mg_val < 0.15 else '#1B2A4A')
+        rows_html.append(f'''<tr style="background:{bg};border-bottom:1px solid #EDF2F7;">
+            <td style="padding:9px 12px;font-weight:600;color:#1B2A4A;white-space:nowrap;">{r[group_col]}</td>
+            <td style="padding:9px 8px;text-align:right;">{fmt_n(r["Cantidad_Final"])}</td>
+            <td style="padding:9px 8px;text-align:right;">{fmt_n(r["Cajas Totales"])}</td>
+            <td style="padding:9px 8px;text-align:right;font-weight:600;">{fmt_m(r["Neto_Final"])}</td>
+            <td style="padding:9px 8px;text-align:right;border-left:2px solid #EDF2F7;color:#95A5A6;">{fmt_m(r["Costo PRD"])}</td>
+            <td style="padding:9px 8px;text-align:right;color:#95A5A6;">{fmt_m(r["Costo Rappel"])}</td>
+            <td style="padding:9px 8px;text-align:right;color:#95A5A6;">{fmt_m(r["Rappel x3"])}</td>
+            <td style="padding:9px 8px;text-align:right;color:#95A5A6;">{fmt_m(r["Bonificacion Casal"])}</td>
+            <td style="padding:9px 8px;text-align:right;font-weight:700;color:{mg_color};">{fmt_pct(mg_val)}</td>
+        </tr>''')
+
+    t = g_act[['Cantidad_Final','Cajas Totales','Neto_Final','Costo PRD','Costo Rappel','Rappel x3','Bonificacion Casal']].sum()
+    t_neto = t['Neto_Final']
+    t_mg = (t_neto + t['Costo PRD'] + t['Costo Rappel'] + t['Rappel x3'] + t['Bonificacion Casal']) / t_neto if t_neto else 0
+    total_row = f'''<tr style="background:linear-gradient(90deg,#0D1B2A,#1B2A4A);color:white;font-weight:700;font-size:12px;">
+        <td style="padding:11px 12px;border-radius:0 0 0 8px;">TOTAL</td>
+        <td style="padding:11px 8px;text-align:right;">{fmt_n(t["Cantidad_Final"])}</td>
+        <td style="padding:11px 8px;text-align:right;">{fmt_n(t["Cajas Totales"])}</td>
+        <td style="padding:11px 8px;text-align:right;">{fmt_m(t_neto)}</td>
+        <td style="padding:11px 8px;text-align:right;border-left:2px solid #2E5090;opacity:0.7;">{fmt_m(t["Costo PRD"])}</td>
+        <td style="padding:11px 8px;text-align:right;opacity:0.7;">{fmt_m(t["Costo Rappel"])}</td>
+        <td style="padding:11px 8px;text-align:right;opacity:0.7;">{fmt_m(t["Rappel x3"])}</td>
+        <td style="padding:11px 8px;text-align:right;opacity:0.7;">{fmt_m(t["Bonificacion Casal"])}</td>
+        <td style="padding:11px 8px;text-align:right;border-radius:0 0 8px 0;">{fmt_pct(t_mg)}</td>
+    </tr>'''
+
+    html = hdr + '\n'.join(rows_html) + total_row + '</tbody></table>'
+    st.markdown(f'<div style="overflow-x:auto;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,0.08);margin:8px 0 16px 0;">{html}</div>', unsafe_allow_html=True)
 
 
 # ============================================================
