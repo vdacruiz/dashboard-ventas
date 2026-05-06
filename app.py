@@ -196,8 +196,62 @@ def cargar_datos():
 
     if 'Ejecutivo' in df.columns:
         df['Ejecutivo'] = df['Ejecutivo'].astype(str).str.strip()
+        df['Ejecutivo'] = df['Ejecutivo'].replace({'Dhernández': 'DHernández', 'DHernandez': 'DHernández'})
 
     return df
+
+
+# ============================================================
+# AUTENTICACIÓN
+# ============================================================
+USUARIOS = {
+    'admin':       {'rol': 'admin',     'nombre': 'Administrador',  'ejecutivo': None},
+    'jmmontenegro':{'rol': 'ejecutivo', 'nombre': 'JM Montenegro', 'ejecutivo': 'JMMontenegro'},
+    'cossa':       {'rol': 'ejecutivo', 'nombre': 'Carlos Ossa',   'ejecutivo': 'Carlos Ossa'},
+    'dhernandez':  {'rol': 'ejecutivo', 'nombre': 'D. Hernández',  'ejecutivo': 'DHernández'},
+}
+
+def verificar_password(user, pwd):
+    try:
+        passwords = st.secrets["passwords"]
+        return passwords.get(user) == pwd
+    except Exception:
+        defaults = {'admin': 'Vda2026*', 'jmmontenegro': 'juan2026',
+                    'cossa': 'ossa2026', 'dhernandez': 'dhernandez2026'}
+        return defaults.get(user) == pwd
+
+def login():
+    st.markdown("""
+    <div style="display:flex; justify-content:center; margin-top:60px;">
+    <div style="background:linear-gradient(135deg,#0D1B2A,#1B2A4A,#2E5090);
+        padding:40px 50px; border-radius:20px; text-align:center; max-width:420px;
+        box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+        <div style="font-size:36px; font-weight:800; color:white; letter-spacing:-1px;">VA</div>
+        <div style="font-size:12px; color:#87CEEB; letter-spacing:2px; margin-top:4px;">VINA DE AGUIRRE</div>
+        <div style="font-size:14px; color:#C9960C; margin-top:12px; font-weight:600;">Dashboard Venta Nacional</div>
+    </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("")
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        with st.form("login_form"):
+            usuario = st.text_input("Usuario", placeholder="Ingrese su usuario")
+            password = st.text_input("Contraseña", type="password", placeholder="Ingrese su contraseña")
+            submit = st.form_submit_button("Ingresar", use_container_width=True)
+
+            if submit:
+                user_lower = usuario.strip().lower()
+                if user_lower in USUARIOS and verificar_password(user_lower, password):
+                    st.session_state['authenticated'] = True
+                    st.session_state['user'] = user_lower
+                    st.session_state['rol'] = USUARIOS[user_lower]['rol']
+                    st.session_state['nombre'] = USUARIOS[user_lower]['nombre']
+                    st.session_state['ejecutivo'] = USUARIOS[user_lower]['ejecutivo']
+                    st.rerun()
+                else:
+                    st.error("Usuario o contraseña incorrectos")
 
 
 def limpiar_numero(val):
@@ -860,6 +914,47 @@ def tab_mayorista(df, df_act, df_ant, año_act, año_ant):
             fig.update_xaxes(tickformat=',.0f', gridcolor='#f0f0f0')
             st.plotly_chart(fig, use_container_width=True)
 
+    # --- Detalle por Cliente ---
+    section(f"DETALLE POR CLIENTE — {año_act} vs {año_ant}")
+    comp_cli = build_comparison_df(df_m_act, df_m_ant, 'Razon Social', año_act, año_ant)
+    render_comparison_table(comp_cli, 'Razon Social', año_act, año_ant, f'Neto_{año_act}')
+
+    # --- Alertas de Clientes ---
+    if len(df_m_act) > 0 and len(df_m_ant) > 0:
+        section("ALERTAS DE CLIENTES")
+        cli_alertas = []
+
+        cli_act_g = df_m_act.groupby('Razon Social').agg(
+            Neto=('Neto_Final', 'sum'), Cajas=('Cajas Totales', 'sum')).reset_index()
+        cli_ant_g = df_m_ant.groupby('Razon Social').agg(
+            Neto=('Neto_Final', 'sum'), Cajas=('Cajas Totales', 'sum')).reset_index()
+
+        for _, r in cli_ant_g.iterrows():
+            cliente = r['Razon Social']
+            neto_ant = r['Neto']
+            row_act = cli_act_g[cli_act_g['Razon Social'] == cliente]
+            if len(row_act) == 0:
+                cli_alertas.append(('danger', f"❌ {cliente}: compro ${neto_ant:,.0f} en {año_ant} y NO ha comprado en {año_act}."))
+            else:
+                neto_act = row_act.iloc[0]['Neto']
+                if neto_ant > 0:
+                    var = (neto_act - neto_ant) / abs(neto_ant)
+                    if var < -0.30 and neto_ant > 1000000:
+                        cli_alertas.append(('warning', f"⚠ {cliente}: venta cayo {var:.1%} (${neto_ant:,.0f} → ${neto_act:,.0f})."))
+
+        nuevos_cli = set(cli_act_g['Razon Social']) - set(cli_ant_g['Razon Social'])
+        for cliente in nuevos_cli:
+            neto_n = cli_act_g[cli_act_g['Razon Social'] == cliente].iloc[0]['Neto']
+            if neto_n > 500000:
+                cli_alertas.append(('success', f"✅ {cliente}: cliente nuevo con ${neto_n:,.0f} en {año_act}."))
+
+        if cli_alertas:
+            for tipo, msg in sorted(cli_alertas, key=lambda x: {'danger':0, 'warning':1, 'success':2}[x[0]]):
+                css = {'danger': 'insight-alert', 'warning': 'insight-box', 'success': 'insight-success'}[tipo]
+                st.markdown(f'<div class="insight-box {css}">{msg}</div>', unsafe_allow_html=True)
+        else:
+            st.info("Sin alertas de clientes en este periodo.")
+
 
 # ============================================================
 # TAB 4: RESUMEN VINOS
@@ -934,12 +1029,26 @@ def tab_vinos(df, df_act, df_ant, año_act, año_ant):
 # ============================================================
 # MAIN
 # ============================================================
+if 'authenticated' not in st.session_state:
+    st.session_state['authenticated'] = False
+
+if not st.session_state['authenticated']:
+    login()
+    st.stop()
+
+rol = st.session_state['rol']
+nombre_usuario = st.session_state['nombre']
+ejecutivo_filter = st.session_state.get('ejecutivo')
+
 try:
     df = cargar_datos()
 except Exception as e:
     st.error(f"Error cargando datos: {e}")
     st.info("Verifica que el Google Sheet esté compartido como 'Cualquier persona con el enlace'")
     st.stop()
+
+if rol == 'ejecutivo' and ejecutivo_filter:
+    df = df[df['Ejecutivo'] == ejecutivo_filter].copy()
 
 df_act, df_ant, año_act, año_ant, meses_sel = sidebar_filters(df)
 
@@ -948,29 +1057,38 @@ n_reg = len(df_act)
 n_cli = df_act['Razon Social'].nunique()
 total_cajas = df_act['Cajas Totales'].sum()
 
+if rol == 'admin':
+    titulo_header = "Dashboard Rentabilidad — Mercado Nacional"
+    subtitulo = f"Vina de Aguirre · Mercado Nacional · {meses_txt} {año_act}"
+else:
+    titulo_header = f"Mi Cartera — {nombre_usuario}"
+    subtitulo = f"Vina de Aguirre · Mayorista · {meses_txt} {año_act}"
+
 st.markdown(f"""
 <div class="corp-header">
-    <h1>Dashboard Rentabilidad — Mercado Nacional</h1>
-    <div class="subtitle">Vina de Aguirre · Mercado Nacional · {meses_txt} {año_act}</div>
+    <h1>{titulo_header}</h1>
+    <div class="subtitle">{subtitulo}</div>
     <div class="badge">{n_reg:,} registros &nbsp;|&nbsp; {n_cli} clientes &nbsp;|&nbsp; {total_cajas:,.0f} cajas 9L</div>
 </div>
 """, unsafe_allow_html=True)
 
-tab1, tab2, tab3, tab4 = st.tabs([
-    "📊 Resumen Ejecutivo",
-    "🏪 Supermercado",
-    "📦 Mayorista",
-    "🍷 Resumen Vinos"
-])
-
-with tab1:
-    tab_resumen(df, df_act, df_ant, año_act, año_ant, meses_sel)
-with tab2:
-    tab_supermercado(df, df_act, df_ant, año_act, año_ant)
-with tab3:
+if rol == 'admin':
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "📊 Resumen Ejecutivo",
+        "🏪 Supermercado",
+        "📦 Mayorista",
+        "🍷 Resumen Vinos"
+    ])
+    with tab1:
+        tab_resumen(df, df_act, df_ant, año_act, año_ant, meses_sel)
+    with tab2:
+        tab_supermercado(df, df_act, df_ant, año_act, año_ant)
+    with tab3:
+        tab_mayorista(df, df_act, df_ant, año_act, año_ant)
+    with tab4:
+        tab_vinos(df, df_act, df_ant, año_act, año_ant)
+else:
     tab_mayorista(df, df_act, df_ant, año_act, año_ant)
-with tab4:
-    tab_vinos(df, df_act, df_ant, año_act, año_ant)
 
 st.markdown("""
 <div class="corp-footer">
@@ -980,10 +1098,15 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("""
+if st.sidebar.button("Cerrar Sesion"):
+    for key in ['authenticated', 'user', 'rol', 'nombre', 'ejecutivo']:
+        st.session_state.pop(key, None)
+    st.rerun()
+
+st.sidebar.markdown(f"""
 <div style="text-align:center; padding:10px;">
     <div style="font-size:18px; font-weight:800; color:#C9960C;">VA</div>
     <div style="font-size:10px; color:#87CEEB; margin-top:4px;">VINA DE AGUIRRE</div>
-    <div style="font-size:9px; color:#6B7B8D; margin-top:8px;">Dashboard CFO</div>
+    <div style="font-size:9px; color:#6B7B8D; margin-top:8px;">{nombre_usuario}</div>
 </div>
 """, unsafe_allow_html=True)
