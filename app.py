@@ -397,6 +397,166 @@ def build_super_detail(df_act, df_ant, group_col, año_act, año_ant):
 
 
 # ============================================================
+# MOTOR DE ANÁLISIS AUTOMÁTICO
+# ============================================================
+def generar_analisis_completo(df_act, df_ant, año_act, año_ant):
+    alertas = []
+    oportunidades = []
+    analisis = []
+    recos = []
+
+    def vpct(a, b):
+        return (a - b) / abs(b) if b else None
+
+    neto_a = df_act['Neto_Final'].sum()
+    neto_b = df_ant['Neto_Final'].sum()
+    util_a = df_act['Utilidad'].sum()
+    util_b = df_ant['Utilidad'].sum()
+    cajas_a = df_act['Cajas Totales'].sum()
+    cajas_b = df_ant['Cajas Totales'].sum()
+    mg_a = util_a / neto_a if neto_a else 0
+    mg_b = util_b / neto_b if neto_b else 0
+    dm = (mg_a - mg_b) * 100
+
+    vn = vpct(neto_a, neto_b)
+    vu = vpct(util_a, util_b)
+    vc = vpct(cajas_a, cajas_b)
+
+    # --- VARIACIONES GENERALES ---
+    vn_txt = f"({vn:+.1%})" if vn is not None else ""
+    vu_txt = f"({vu:+.1%})" if vu is not None else ""
+    vc_txt = f"({vc:+.1%})" if vc is not None else ""
+    analisis.append(f"Venta Neta: ${neto_a:,.0f} {vn_txt} | Utilidad: ${util_a:,.0f} {vu_txt}")
+    analisis.append(f"Cajas 9L: {cajas_a:,.0f} {vc_txt} | Margen: {mg_a:.1%} ({dm:+.1f}pp) | Clientes: {df_act['Razon Social'].nunique()}")
+
+    # --- ALERTAS por KPIs ---
+    if vn is not None and vn < -0.10:
+        alertas.append(f"Caida de venta neta de {vn:.1%} vs mismo periodo {año_ant}. Requiere accion correctiva.")
+    elif vn is not None and vn < -0.05:
+        alertas.append(f"Venta neta retrocede {vn:.1%} vs {año_ant}. Monitorear tendencia.")
+    if dm < -2:
+        alertas.append(f"Margen cayo {dm:.1f}pp vs {año_ant} ({mg_b:.1%} → {mg_a:.1%}). Revisar precios y descuentos.")
+    if vu is not None and vn is not None and vu < vn:
+        alertas.append(f"Utilidad cae mas ({vu:+.1%}) que la venta ({vn:+.1%}). Los costos estan creciendo.")
+    if dm > 2:
+        oportunidades.append(f"Margen mejoro {dm:+.1f}pp ({mg_b:.1%} → {mg_a:.1%}). Estrategia de pricing funciona.")
+    if vn is not None and vn > 0.05:
+        oportunidades.append(f"Crecimiento de venta de {vn:+.1%} vs {año_ant}. Mantener impulso comercial.")
+
+    # --- POR CANAL ---
+    analisis.append("")
+    analisis.append("POR CANAL:")
+    for canal in sorted(df_act['Canal de ventas'].unique()):
+        na = df_act[df_act['Canal de ventas'] == canal]['Neto_Final'].sum()
+        nb = df_ant[df_ant['Canal de ventas'] == canal]['Neto_Final'].sum()
+        ua = df_act[df_act['Canal de ventas'] == canal]['Utilidad'].sum()
+        ma = ua / na if na else 0
+        ub = df_ant[df_ant['Canal de ventas'] == canal]['Utilidad'].sum()
+        mb = ub / nb if nb else 0
+        v = vpct(na, nb)
+        part = na / neto_a if neto_a else 0
+        v_txt = f"({v:+.1%})" if v is not None else "(nuevo)"
+        analisis.append(f"  {canal}: ${na:,.0f} {v_txt} | Margen: {ma:.1%} | Participacion: {part:.1%}")
+        if v is not None and v < -0.15:
+            alertas.append(f"Canal {canal} cae {v:.1%}. Revisar estrategia comercial para este segmento.")
+        if ma < mb and (mb - ma) > 0.03:
+            alertas.append(f"Canal {canal}: margen bajo de {mb:.1%} a {ma:.1%} ({(ma-mb)*100:.1f}pp).")
+
+    # --- TOP CATEGORÍAS ---
+    analisis.append("")
+    analisis.append("TOP CATEGORIAS:")
+    cat_a = df_act.groupby('Categoria').agg(Neto=('Neto_Final', 'sum'), Util=('Utilidad', 'sum')).reset_index()
+    cat_b = df_ant.groupby('Categoria').agg(Neto=('Neto_Final', 'sum')).reset_index()
+    cat_a['Mg'] = np.where(cat_a['Neto'] != 0, cat_a['Util'] / cat_a['Neto'], 0)
+    for _, r in cat_a.nlargest(5, 'Neto').iterrows():
+        nb = cat_b.loc[cat_b['Categoria'] == r['Categoria'], 'Neto'].sum()
+        v = vpct(r['Neto'], nb) if nb else None
+        vtxt = f"({v:+.1%})" if v is not None else "(nueva)"
+        analisis.append(f"  {r['Categoria']}: ${r['Neto']:,.0f} {vtxt} | Mg: {r['Mg']:.1%}")
+    for _, r in cat_a.iterrows():
+        nb = cat_b.loc[cat_b['Categoria'] == r['Categoria'], 'Neto'].sum()
+        if nb > 0:
+            v = vpct(r['Neto'], nb)
+            if v is not None and v < -0.20 and nb > neto_a * 0.03:
+                alertas.append(f"Categoria {r['Categoria']} cayo {v:.1%} (era ${nb:,.0f}, ahora ${r['Neto']:,.0f}).")
+
+    # --- MARCAS ---
+    analisis.append("")
+    analisis.append("MARCAS DESTACADAS:")
+    mar_a = df_act.groupby('Marca').agg(Neto=('Neto_Final', 'sum'), Util=('Utilidad', 'sum')).reset_index()
+    mar_a['Mg'] = np.where(mar_a['Neto'] != 0, mar_a['Util'] / mar_a['Neto'], 0)
+    mar_b = df_ant.groupby('Marca').agg(Neto=('Neto_Final', 'sum')).reset_index()
+    umbral = mar_a['Neto'].quantile(0.25)
+    top_mg = mar_a[mar_a['Neto'] > umbral].nlargest(3, 'Mg')
+    bot_mg = mar_a[mar_a['Neto'] > umbral].nsmallest(3, 'Mg')
+    analisis.append(f"  Mayor margen: {', '.join([f'{r.Marca} ({r.Mg:.1%})' for _, r in top_mg.iterrows()])}")
+    analisis.append(f"  Menor margen: {', '.join([f'{r.Marca} ({r.Mg:.1%})' for _, r in bot_mg.iterrows()])}")
+    for _, r in bot_mg.iterrows():
+        if r['Mg'] < 0.10:
+            alertas.append(f"Marca {r['Marca']}: margen de solo {r['Mg']:.1%} con venta ${r['Neto']:,.0f}. Evaluar rentabilidad.")
+
+    mar_comp = mar_a.merge(mar_b, on='Marca', how='left', suffixes=('_a', '_b'))
+    mar_comp['var'] = mar_comp.apply(lambda x: vpct(x['Neto_a'], x['Neto_b']) if pd.notna(x.get('Neto_b')) and x['Neto_b'] > 0 else None, axis=1)
+    mar_comp_f = mar_comp[mar_comp['Neto_b'] > umbral] if 'Neto_b' in mar_comp.columns else mar_comp
+    crecieron = mar_comp_f.dropna(subset=['var']).nlargest(3, 'var')
+    cayeron = mar_comp_f.dropna(subset=['var']).nsmallest(3, 'var')
+    if len(crecieron):
+        analisis.append(f"  Mayor crecimiento: {', '.join([f'{r.Marca} ({r.var:+.1%})' for _, r in crecieron.iterrows()])}")
+    if len(cayeron):
+        analisis.append(f"  Mayor caida: {', '.join([f'{r.Marca} ({r.var:+.1%})' for _, r in cayeron.iterrows()])}")
+
+    # --- CONCENTRACIÓN DE CLIENTES ---
+    analisis.append("")
+    analisis.append("CONCENTRACION DE CLIENTES:")
+    cli = df_act.groupby('Razon Social')['Neto_Final'].sum().sort_values(ascending=False)
+    total = cli.sum()
+    if total > 0 and len(cli) > 0:
+        top1_pct = cli.iloc[0] / total
+        top5_pct = cli.head(5).sum() / total
+        top10_pct = cli.head(10).sum() / total
+        analisis.append(f"  Top 1: {cli.index[0]} → {top1_pct:.1%} del total")
+        analisis.append(f"  Top 5 clientes: {top5_pct:.1%} | Top 10: {top10_pct:.1%}")
+        if top1_pct > 0.30:
+            alertas.append(f"RIESGO ALTO: {cli.index[0]} concentra {top1_pct:.1%} de la venta.")
+        if top5_pct > 0.70:
+            alertas.append(f"RIESGO: Top 5 clientes concentran {top5_pct:.1%}. Diversificar cartera.")
+
+    cli_ant = set(df_ant['Razon Social'].unique())
+    cli_act = set(df_act['Razon Social'].unique())
+    perdidos = cli_ant - cli_act
+    if perdidos:
+        venta_perdida = df_ant[df_ant['Razon Social'].isin(perdidos)]['Neto_Final'].sum()
+        analisis.append(f"  Clientes perdidos: {len(perdidos)} (${venta_perdida:,.0f} en {año_ant})")
+        if venta_perdida > neto_a * 0.05:
+            alertas.append(f"Se perdieron {len(perdidos)} clientes que representaban ${venta_perdida:,.0f}.")
+    nuevos = cli_act - cli_ant
+    if nuevos:
+        venta_nueva = df_act[df_act['Razon Social'].isin(nuevos)]['Neto_Final'].sum()
+        oportunidades.append(f"Clientes nuevos: {len(nuevos)} aportando ${venta_nueva:,.0f}.")
+
+    # --- RECOMENDACIONES ---
+    if vn is not None and vn < 0:
+        recos.append("Activar plan de recuperacion comercial. Revisar pricing y descuentos por canal.")
+    if dm < -1:
+        recos.append("Auditar costos de produccion y estructura de rappel por marca.")
+    if total > 0 and len(cli) >= 5:
+        t5 = cli.head(5).sum() / total
+        if t5 > 0.65:
+            recos.append("Implementar plan de diversificacion de cartera: captar 10+ clientes medianos.")
+    for _, r in bot_mg.iterrows():
+        if r['Mg'] < 0.10:
+            recos.append(f"Evaluar discontinuar o reposicionar marca {r['Marca']} (margen {r['Mg']:.1%}).")
+            break
+    if len(perdidos) > 3:
+        recos.append(f"Contactar {len(perdidos)} clientes perdidos: entender razones y plan de recuperacion.")
+    if len(crecieron) > 0:
+        recos.append("Potenciar marcas de alto margen con mayor inversion comercial.")
+    recos.append("Establecer revision semanal de KPIs para detectar desviaciones tempranamente.")
+
+    return alertas, oportunidades, analisis, recos[:7]
+
+
+# ============================================================
 # SIDEBAR FILTERS
 # ============================================================
 def sidebar_filters(df):
@@ -570,28 +730,31 @@ def tab_resumen(df, df_act, df_ant, año_act, año_ant, meses_sel):
     comp_marca = build_comparison_df(df_act, df_ant, 'Marca', año_act, año_ant)
     render_comparison_table(comp_marca, 'Marca', año_act, año_ant, f'Utilidad_{año_act}')
 
-    # --- Insights ---
+    # --- Motor de Análisis Automático ---
     if len(df_act) > 0:
         st.markdown("")
-        section("ALERTAS E INSIGHTS")
-        total_neto_a = df_act['Neto_Final'].sum()
-        total_neto_b = df_ant['Neto_Final'].sum()
-        var_neto = var_pct(total_neto_a, total_neto_b)
-        if var_neto is not None:
-            if var_neto < -0.05:
-                insight(f"⚠️ Venta neta cae {abs(var_neto):.1%} vs {año_ant}. Revisar canales con mayor retroceso.")
-            elif var_neto > 0.05:
-                insight(f"✅ Venta neta crece {var_neto:.1%} vs {año_ant}.")
+        alertas, oportunidades, analisis, recos = generar_analisis_completo(
+            df_act, df_ant, año_act, año_ant)
 
-        if len(comp_marca) > 0:
-            top = comp_marca.sort_values(f'Mg_{año_act}', ascending=False).head(3)
-            nombres = ", ".join(top['Marca'].tolist())
-            insight(f"🏆 Marcas con mejor margen: {nombres}")
+        if alertas:
+            section("⚠ ALERTAS")
+            for a in alertas:
+                st.markdown(f'<div class="insight-box insight-alert">{a}</div>', unsafe_allow_html=True)
 
-            bot = comp_marca[comp_marca[f'Neto_{año_act}'] > 0].sort_values(f'Mg_{año_act}').head(3)
-            if len(bot) > 0:
-                nombres_b = ", ".join(bot['Marca'].tolist())
-                insight(f"📉 Marcas con menor margen: {nombres_b}")
+        if oportunidades:
+            section("✓ OPORTUNIDADES")
+            for o in oportunidades:
+                st.markdown(f'<div class="insight-box insight-success">{o}</div>', unsafe_allow_html=True)
+
+        if analisis:
+            section("ANALISIS DETALLADO")
+            for a in analisis:
+                insight(a)
+
+        if recos:
+            section("RECOMENDACIONES")
+            for r in recos:
+                st.markdown(f'<div class="insight-box">➜ {r}</div>', unsafe_allow_html=True)
 
 
 # ============================================================
