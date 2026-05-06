@@ -253,6 +253,42 @@ def auto_login():
         return True
     return False
 
+def save_session_js(user, token):
+    import streamlit.components.v1 as components
+    components.html(f"""
+    <script>
+        localStorage.setItem('va_user', '{user}');
+        localStorage.setItem('va_token', '{token}');
+        window.parent.location.reload();
+    </script>
+    """, height=0)
+
+def clear_session_js():
+    import streamlit.components.v1 as components
+    components.html("""
+    <script>
+        localStorage.removeItem('va_user');
+        localStorage.removeItem('va_token');
+    </script>
+    """, height=0)
+
+def check_local_storage():
+    import streamlit.components.v1 as components
+    components.html("""
+    <script>
+        const user = localStorage.getItem('va_user');
+        const token = localStorage.getItem('va_token');
+        if (user && token) {
+            const url = new URL(window.parent.location);
+            if (!url.searchParams.get('user')) {
+                url.searchParams.set('user', user);
+                url.searchParams.set('token', token);
+                window.parent.location.href = url.toString();
+            }
+        }
+    </script>
+    """, height=0)
+
 def login():
     st.markdown("""
     <div style="display:flex; justify-content:center; margin-top:60px;">
@@ -283,10 +319,14 @@ def login():
                     st.session_state['rol'] = USUARIOS[user_lower]['rol']
                     st.session_state['nombre'] = USUARIOS[user_lower]['nombre']
                     st.session_state['ejecutivo'] = USUARIOS[user_lower]['ejecutivo']
+                    token = make_token(user_lower)
+                    st.query_params["user"] = user_lower
+                    st.query_params["token"] = token
                     if recordar:
-                        st.query_params["user"] = user_lower
-                        st.query_params["token"] = make_token(user_lower)
-                    st.rerun()
+                        save_session_js(user_lower, token)
+                        st.stop()
+                    else:
+                        st.rerun()
                 else:
                     st.error("Usuario o contraseña incorrectos")
 
@@ -1102,6 +1142,7 @@ if 'authenticated' not in st.session_state:
 
 if not st.session_state['authenticated']:
     if not auto_login():
+        check_local_storage()
         login()
         st.stop()
 
@@ -1169,6 +1210,7 @@ st.markdown("""
 st.sidebar.markdown("---")
 st.sidebar.markdown("")
 if st.sidebar.button("🔒 Cerrar Sesion", type="primary"):
+    clear_session_js()
     for key in ['authenticated', 'user', 'rol', 'nombre', 'ejecutivo']:
         st.session_state.pop(key, None)
     st.query_params.clear()
