@@ -50,7 +50,11 @@ st.markdown("""
     [data-testid="stSidebar"] {
         background: linear-gradient(180deg, #0D1B2A 0%, #1B2A4A 40%, #2E5090 100%);
     }
-    [data-testid="stSidebar"] * { color: white !important; }
+    [data-testid="stSidebar"] > div { color: white !important; }
+    [data-testid="stSidebar"] label, [data-testid="stSidebar"] .stMarkdown { color: white !important; }
+    [data-testid="stSidebar"] [data-baseweb="select"] span,
+    [data-testid="stSidebar"] [data-baseweb="select"] input,
+    [data-testid="stSidebar"] option { color: #1B2A4A !important; }
     [data-testid="stSidebar"] .stSelectbox label,
     [data-testid="stSidebar"] .stMultiSelect label,
     [data-testid="stSidebar"] .stDateInput label {
