@@ -10,7 +10,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from io import BytesIO
+from streamlit_js_eval import streamlit_js_eval
+import json
 import hashlib
+import base64
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -23,6 +26,10 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+import pathlib
+_logo_path = pathlib.Path(__file__).parent / "logo_vda.jpg"
+LOGO_B64 = base64.b64encode(_logo_path.read_bytes()).decode() if _logo_path.exists() else ""
 
 GOOGLE_SHEET_ID = "1mtythtz8KLzrP-MoSFbCJvCQApEbRbzA1LAF2Synz1A"
 GOOGLE_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{GOOGLE_SHEET_ID}/export?format=xlsx"
@@ -327,65 +334,50 @@ def _clear_js():
     </script>
     """, height=0)
 
-def _restore_js():
-    """Lee credenciales de cookies/localStorage/IndexedDB y redirige con query params."""
-    import streamlit.components.v1 as components
-    components.html("""
-    <script>
-    (function() {
-        function gc(n, s) {
-            var c = (s || '').split(';');
-            for (var i = 0; i < c.length; i++) { var p = c[i].trim().split('='); if (p[0] === n) return p[1]; }
-            return null;
-        }
-        function redirect(u, t) {
-            if (u && t) {
-                var url = new URL(window.parent.location);
-                if (!url.searchParams.get('user')) {
-                    url.searchParams.set('user', u);
-                    url.searchParams.set('token', t);
-                    window.parent.location.replace(url.toString());
-                }
+def restore_session():
+    """Lee credenciales desde browser storage via streamlit_js_eval (sin redirect)."""
+    stored = streamlit_js_eval(
+        js_expressions="""(function() {
+            var u = null, t = null;
+            try { u = localStorage.getItem('va_user'); t = localStorage.getItem('va_token'); } catch(e) {}
+            if (!u || !t) {
+                try {
+                    document.cookie.split(';').forEach(function(c) {
+                        var p = c.trim().split('=');
+                        if (p[0] === 'va_user' && !u) u = p[1];
+                        if (p[0] === 'va_token' && !t) t = p[1];
+                    });
+                } catch(e) {}
             }
-        }
-        var u = null, t = null;
-        // 1. Cookies (iframe)
-        u = gc('va_user', document.cookie); t = gc('va_token', document.cookie);
-        // 2. Cookies (parent)
-        if (!u||!t) { try { u=u||gc('va_user',window.parent.document.cookie); t=t||gc('va_token',window.parent.document.cookie); } catch(e){} }
-        // 3. localStorage (iframe)
-        if (!u||!t) { try { u=u||localStorage.getItem('va_user'); t=t||localStorage.getItem('va_token'); } catch(e){} }
-        // 4. localStorage (parent)
-        if (!u||!t) { try { u=u||window.parent.localStorage.getItem('va_user'); t=t||window.parent.localStorage.getItem('va_token'); } catch(e){} }
-        if (u && t) { redirect(u, t); return; }
-        // 5. IndexedDB (async, ultimo recurso)
-        try {
-            var r = indexedDB.open('va_session', 1);
-            r.onupgradeneeded = function(e) { e.target.result.createObjectStore('s'); };
-            r.onsuccess = function(e) {
-                var db = e.target.result;
-                if (!db.objectStoreNames.contains('s')) return;
-                var tx = db.transaction('s','readonly');
-                var store = tx.objectStore('s');
-                var ru = store.get('user'), rt = store.get('token');
-                tx.oncomplete = function() {
-                    redirect(ru.result, rt.result);
-                };
-            };
-        } catch(e) {}
-    })();
-    </script>
-    """, height=0)
+            return JSON.stringify({u: u || null, t: t || null});
+        })()""",
+        key="va_restore"
+    )
+    if not stored or stored == 0:
+        return False
+    try:
+        data = json.loads(stored)
+        user = data.get('u')
+        token = data.get('t')
+        if user and token and user in USUARIOS and make_token(user) == token:
+            st.session_state['authenticated'] = True
+            st.session_state['user'] = user
+            st.session_state['rol'] = USUARIOS[user]['rol']
+            st.session_state['nombre'] = USUARIOS[user]['nombre']
+            st.session_state['ejecutivo'] = USUARIOS[user]['ejecutivo']
+            return True
+    except (json.JSONDecodeError, KeyError, TypeError):
+        pass
+    return False
 
 def login():
-    st.markdown("""
+    st.markdown(f"""
     <div style="display:flex; justify-content:center; margin-top:60px;">
     <div style="background:linear-gradient(135deg,#0D1B2A,#1B2A4A,#2E5090);
         padding:40px 50px; border-radius:20px; text-align:center; max-width:420px;
         box-shadow:0 20px 60px rgba(0,0,0,0.3);">
-        <div style="font-size:36px; font-weight:800; color:white; letter-spacing:-1px;">VA</div>
-        <div style="font-size:12px; color:#87CEEB; letter-spacing:2px; margin-top:4px;">VINA DE AGUIRRE</div>
-        <div style="font-size:14px; color:#C9960C; margin-top:12px; font-weight:600;">Dashboard Venta Nacional</div>
+        <img src="data:image/jpeg;base64,{LOGO_B64}" style="height:80px;margin-bottom:10px;" alt="VDA">
+        <div style="font-size:14px; color:#C9960C; margin-top:8px; font-weight:600;">Dashboard Venta Nacional</div>
     </div>
     </div>
     """, unsafe_allow_html=True)
@@ -1316,7 +1308,8 @@ if not st.session_state['authenticated']:
     if st.session_state.pop('_clear', False):
         _clear_js()
     if not auto_login():
-        _restore_js()
+        if restore_session():
+            st.rerun()
         login()
         st.stop()
 
@@ -1349,10 +1342,13 @@ else:
     subtitulo = f"Vina de Aguirre · Mayorista · {meses_txt} {año_act}"
 
 st.markdown(f"""
-<div class="corp-header">
-    <h1>{titulo_header}</h1>
-    <div class="subtitle">{subtitulo}</div>
-    <div class="badge">{n_reg:,} registros &nbsp;|&nbsp; {n_cli} clientes &nbsp;|&nbsp; {total_cajas:,.0f} cajas 9L</div>
+<div class="corp-header" style="display:flex;align-items:center;gap:20px;">
+    <img src="data:image/jpeg;base64,{LOGO_B64}" style="height:60px;border-radius:8px;flex-shrink:0;" alt="VDA">
+    <div>
+        <h1>{titulo_header}</h1>
+        <div class="subtitle">{subtitulo}</div>
+        <div class="badge">{n_reg:,} registros &nbsp;|&nbsp; {n_cli} clientes &nbsp;|&nbsp; {total_cajas:,.0f} cajas 9L</div>
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1408,9 +1404,8 @@ if st.sidebar.button("🔒 Cerrar Sesion", type="primary"):
 
 st.sidebar.markdown(f"""
 <div style="text-align:center; padding:10px;">
-    <div style="font-size:18px; font-weight:800; color:#C9960C;">VA</div>
-    <div style="font-size:10px; color:#87CEEB; margin-top:4px;">VINA DE AGUIRRE</div>
-    <div style="font-size:9px; color:#6B7B8D; margin-top:8px;">{nombre_usuario}</div>
+    <img src="data:image/jpeg;base64,{LOGO_B64}" style="height:45px;margin-bottom:6px;" alt="VDA">
+    <div style="font-size:9px; color:#6B7B8D; margin-top:4px;">{nombre_usuario}</div>
 </div>
 """, unsafe_allow_html=True)
 
