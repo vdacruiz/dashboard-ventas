@@ -56,7 +56,13 @@ st.markdown("""
     [data-testid="stSidebar"] [data-baseweb="select"] span,
     [data-testid="stSidebar"] [data-baseweb="select"] input,
     [data-testid="stSidebar"] option { color: #1B2A4A !important; }
-    [data-testid="stSidebar"] button { color: white !important; border-color: rgba(255,255,255,0.3) !important; }
+    [data-testid="stSidebar"] button[kind="primary"] {
+        background: rgba(255,255,255,0.15) !important; color: white !important;
+        border: 1px solid rgba(255,255,255,0.4) !important; border-radius: 8px !important;
+    }
+    [data-testid="stSidebar"] button[kind="primary"]:hover {
+        background: rgba(255,255,255,0.25) !important;
+    }
     [data-testid="stSidebar"] [role="radiogroup"] label span,
     [data-testid="stSidebar"] [role="radiogroup"] label p,
     [data-testid="stSidebar"] .stRadio label span { color: white !important; }
@@ -1157,7 +1163,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
-if st.sidebar.button("Cerrar Sesion"):
+st.sidebar.markdown("")
+if st.sidebar.button("🔒 Cerrar Sesion", type="primary"):
     for key in ['authenticated', 'user', 'rol', 'nombre', 'ejecutivo']:
         st.session_state.pop(key, None)
     st.query_params.clear()
