@@ -74,31 +74,21 @@ st.markdown("""
         text-transform: uppercase; letter-spacing: 0.5px;
     }
 
-    /* Boton collapse/expand sidebar (movil) */
-    button[data-testid="stSidebarCollapseButton"],
-    button[data-testid="collapsedControl"],
-    [data-testid="stSidebar"] button[data-testid="stBaseButton-header"],
-    [data-testid="stSidebar"] button[data-testid="stBaseButton-headerNoPadding"],
-    [data-testid="stSidebar"] header button,
-    [data-testid="stSidebarCollapsedControl"],
-    [data-testid="stSidebarNav"] button,
-    .stSidebar button[kind="header"] {
+    /* TODOS los botones dentro del sidebar (excepto primary = Cerrar Sesion) */
+    [data-testid="stSidebar"] button:not([kind="primary"]):not([data-testid="stDownloadButton"]) {
         color: white !important;
-        background: rgba(255,255,255,0.2) !important;
-        border: 1px solid rgba(255,255,255,0.4) !important;
+        background: rgba(255,255,255,0.25) !important;
+        border: 1px solid rgba(255,255,255,0.5) !important;
         border-radius: 8px !important;
     }
-    button[data-testid="stSidebarCollapseButton"]:hover,
-    [data-testid="stSidebar"] button[data-testid="stBaseButton-header"]:hover,
-    [data-testid="stSidebar"] header button:hover {
-        background: rgba(255,255,255,0.35) !important;
+    [data-testid="stSidebar"] button:not([kind="primary"]):not([data-testid="stDownloadButton"]):hover {
+        background: rgba(255,255,255,0.4) !important;
     }
-    /* Boton expand sidebar cuando esta colapsado */
-    button[data-testid="collapsedControl"],
-    [data-testid="stSidebarCollapsedControl"] {
-        color: #1B2A4A !important;
-        background: #F2F2F2 !important;
-        border: 1px solid #d0d5dd !important;
+    /* SVG icons dentro de botones del sidebar */
+    [data-testid="stSidebar"] button:not([kind="primary"]) svg {
+        fill: white !important;
+        stroke: white !important;
+        color: white !important;
     }
 
     /* Header corporativo */
