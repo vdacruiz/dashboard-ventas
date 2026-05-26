@@ -1411,7 +1411,7 @@ def tab_mayorista(df, df_act, df_ant, año_act, año_ant):
 # TAB 4: RESUMEN VINOS
 # ============================================================
 def tab_vinos(df, df_act, df_ant, año_act, año_ant):
-    cats_vino = ['Vino', 'Vino Saldos', 'Vino Coctel', 'Saldos']
+    cats_vino = ['Vino', 'Vino Saldos', 'Vino Coctel']
     df_v_act = df_act[df_act['Categoria'].isin(cats_vino)].copy()
     df_v_ant = df_ant[df_ant['Categoria'].isin(cats_vino)].copy()
 
