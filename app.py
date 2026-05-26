@@ -638,6 +638,38 @@ def render_comparison_table(comp_df, group_col, año_act, año_ant, sort_by=None
     st.markdown(f'<div style="overflow-x:auto;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,0.08);margin:8px 0 16px 0;">{html}</div>', unsafe_allow_html=True)
 
 
+def render_sortable_comparison_table(comp_df, group_col, año_act, año_ant, default_sort=None, key_prefix=""):
+    if len(comp_df) == 0:
+        st.info("Sin datos para este período")
+        return
+    sortable = {
+        group_col: group_col,
+        f'Cajas_{año_act}': f'Cajas {año_act}',
+        f'Neto_{año_act}': f'Vta Neta {año_act}',
+        f'Utilidad_{año_act}': f'Utilidad {año_act}',
+        f'Mg_{año_act}': f'Margen% {año_act}',
+        f'Var%_Cajas': 'Var% Cajas',
+        f'Var%_Neto': 'Var% Neto',
+        f'Var%_Utilidad': 'Var% Utilidad',
+    }
+    available = {k: v for k, v in sortable.items() if k in comp_df.columns}
+    keys = list(available.keys())
+    default_idx = keys.index(default_sort) if default_sort and default_sort in keys else 0
+    c1, c2 = st.columns([4, 1])
+    with c1:
+        sort_col = st.selectbox(
+            "Ordenar por", keys,
+            format_func=lambda x: available[x],
+            index=default_idx,
+            key=f"sort_{key_prefix}_{group_col}",
+            label_visibility="collapsed",
+        )
+    with c2:
+        asc = st.toggle("Asc", value=False, key=f"asc_{key_prefix}_{group_col}")
+    comp_sorted = comp_df.sort_values(sort_col, ascending=asc, na_position='last')
+    render_comparison_table(comp_sorted, group_col, año_act, año_ant)
+
+
 def build_super_detail(df_act, df_ant, group_col, año_act, año_ant):
     """Tabla especial Supermercado con desglose Costo PRD, Rappel, etc."""
     agg = {
@@ -708,6 +740,153 @@ def build_super_detail(df_act, df_ant, group_col, año_act, año_ant):
 
     html = hdr + '\n'.join(rows_html) + total_row + '</tbody></table>'
     st.markdown(f'<div style="overflow-x:auto;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,0.08);margin:8px 0 16px 0;">{html}</div>', unsafe_allow_html=True)
+
+
+# ============================================================
+# EXCEL VINOS
+# ============================================================
+def generar_excel_vinos(sheets_data, año_act, año_ant):
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    hdr_fill = PatternFill(start_color='1B2A4A', end_color='1B2A4A', fill_type='solid')
+    hdr_font = Font(name='Calibri', bold=True, color='FFFFFF', size=10)
+    total_fill = PatternFill(start_color='2E5090', end_color='2E5090', fill_type='solid')
+    total_font = Font(name='Calibri', bold=True, color='FFFFFF', size=10)
+    alt_fill = PatternFill(start_color='F8FAFC', end_color='F8FAFC', fill_type='solid')
+    green_font = Font(name='Calibri', color='27AE60', bold=True, size=10)
+    red_font = Font(name='Calibri', color='E74C3C', bold=True, size=10)
+    num_font = Font(name='Calibri', size=10)
+    name_font = Font(name='Calibri', bold=True, color='1B2A4A', size=10)
+    thin_border = Border(
+        bottom=Side(style='thin', color='E8ECF1'),
+    )
+    center = Alignment(horizontal='center', vertical='center')
+    right_al = Alignment(horizontal='right', vertical='center')
+    left_al = Alignment(horizontal='left', vertical='center')
+
+    col_map_base = {
+        'Cajas': 'Cajas', 'Neto': 'Vta Neta', 'Costo': 'Costo',
+        'Utilidad': 'Utilidad', 'Util_Unit': 'Util Unit', 'Mg': 'Margen%',
+        'Var_Cajas': 'Var Cajas', 'Var_Neto': 'Var Neto', 'Var_Utilidad': 'Var Util',
+        'Var%_Cajas': 'Var% Cajas', 'Var%_Neto': 'Var% Neto', 'Var%_Utilidad': 'Var% Util',
+    }
+
+    def _nice_cols(df, group_col):
+        rename = {group_col: group_col}
+        for c in df.columns:
+            if c == group_col:
+                continue
+            for base, label in col_map_base.items():
+                if c.startswith(base):
+                    suffix = c.replace(base + '_', '').replace(base, '')
+                    if suffix and suffix.isdigit():
+                        rename[c] = f'{label} {suffix}'
+                    elif 'Var%' in c:
+                        rename[c] = label
+                    elif 'Var_' in c:
+                        rename[c] = label
+                    else:
+                        rename[c] = c
+                    break
+            else:
+                rename[c] = c
+        return df.rename(columns=rename)
+
+    buf = BytesIO()
+    with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+        for sheet_name, (comp_df, group_col) in sheets_data.items():
+            if comp_df is None or len(comp_df) == 0:
+                continue
+            nice = _nice_cols(comp_df.copy(), group_col)
+            nice.to_excel(writer, sheet_name=sheet_name[:31], index=False, startrow=0)
+
+        wb = writer.book
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            max_row = ws.max_row
+            max_col = ws.max_column
+
+            for col_idx in range(1, max_col + 1):
+                cell = ws.cell(row=1, column=col_idx)
+                cell.fill = hdr_fill
+                cell.font = hdr_font
+                cell.alignment = center
+
+            for row_idx in range(2, max_row + 1):
+                for col_idx in range(1, max_col + 1):
+                    cell = ws.cell(row=row_idx, column=col_idx)
+                    cell.border = thin_border
+                    header = ws.cell(row=1, column=col_idx).value or ''
+
+                    if col_idx == 1:
+                        cell.font = name_font
+                        cell.alignment = left_al
+                    elif 'Var%' in header:
+                        val = cell.value
+                        if isinstance(val, (int, float)) and not pd.isna(val):
+                            cell.font = green_font if val >= 0 else red_font
+                            cell.number_format = '0.0%'
+                        cell.alignment = center
+                    elif 'Margen' in header or 'Mg' in header:
+                        cell.number_format = '0.0%'
+                        cell.font = num_font
+                        cell.alignment = right_al
+                    elif any(k in header for k in ['Vta', 'Costo', 'Utilidad', 'Util', 'Neto', 'Var ']):
+                        cell.number_format = '$#,##0'
+                        cell.font = num_font
+                        cell.alignment = right_al
+                    elif 'Cajas' in header:
+                        cell.number_format = '#,##0'
+                        cell.font = num_font
+                        cell.alignment = right_al
+                    else:
+                        cell.font = num_font
+
+                    if row_idx % 2 == 0:
+                        cell.fill = alt_fill
+
+            totals = {}
+            for col_idx in range(2, max_col + 1):
+                header = ws.cell(row=1, column=col_idx).value or ''
+                if 'Var%' in header or 'Margen' in header:
+                    continue
+                vals = []
+                for row_idx in range(2, max_row + 1):
+                    v = ws.cell(row=row_idx, column=col_idx).value
+                    if isinstance(v, (int, float)) and not pd.isna(v):
+                        vals.append(v)
+                if vals:
+                    totals[col_idx] = sum(vals)
+
+            total_row = max_row + 1
+            ws.cell(row=total_row, column=1, value='TOTAL')
+            ws.cell(row=total_row, column=1).fill = total_fill
+            ws.cell(row=total_row, column=1).font = total_font
+            ws.cell(row=total_row, column=1).alignment = left_al
+            for col_idx in range(2, max_col + 1):
+                cell = ws.cell(row=total_row, column=col_idx)
+                cell.fill = total_fill
+                cell.font = total_font
+                cell.alignment = right_al
+                if col_idx in totals:
+                    cell.value = totals[col_idx]
+                    header = ws.cell(row=1, column=col_idx).value or ''
+                    if any(k in header for k in ['Vta', 'Costo', 'Utilidad', 'Util', 'Neto']):
+                        cell.number_format = '$#,##0'
+                    elif 'Cajas' in header:
+                        cell.number_format = '#,##0'
+
+            for col_idx in range(1, max_col + 1):
+                max_len = len(str(ws.cell(row=1, column=col_idx).value or ''))
+                for row_idx in range(2, total_row + 1):
+                    val = ws.cell(row=row_idx, column=col_idx).value
+                    max_len = max(max_len, len(str(val or '')))
+                ws.column_dimensions[get_column_letter(col_idx)].width = min(max_len + 4, 25)
+
+            ws.freeze_panes = 'A2'
+
+    return buf.getvalue()
 
 
 # ============================================================
@@ -1236,46 +1415,139 @@ def tab_vinos(df, df_act, df_ant, año_act, año_ant):
     df_v_act = df_act[df_act['Categoria'].isin(cats_vino)].copy()
     df_v_ant = df_ant[df_ant['Categoria'].isin(cats_vino)].copy()
 
+    # --- Filtros locales de Vinos ---
+    meses_disp = sorted(df_v_act['Mes'].unique()) if len(df_v_act) > 0 else list(range(1, 13))
+    canales_disp = sorted(df_v_act['Canal de ventas'].dropna().unique().tolist()) if len(df_v_act) > 0 else []
+    marcas_disp = sorted(df_v_act['Marca'].dropna().unique().tolist()) if len(df_v_act) > 0 else []
+    clientes_disp = sorted(df_v_act['Razon Social'].dropna().unique().tolist()) if len(df_v_act) > 0 else []
+
+    with st.expander("🎛️ Filtros Vinos", expanded=True):
+        fc1, fc2, fc3, fc4 = st.columns(4)
+        with fc1:
+            vf_meses = st.multiselect(
+                "Mes(es)", meses_disp, default=meses_disp,
+                format_func=lambda x: MESES.get(x, str(x)), key="vinos_meses")
+        with fc2:
+            vf_canal = st.multiselect("Canal", canales_disp, default=canales_disp, key="vinos_canal")
+        with fc3:
+            vf_marca = st.multiselect("Marca", marcas_disp, default=marcas_disp, key="vinos_marca")
+        with fc4:
+            vf_cliente = st.multiselect("Cliente", clientes_disp, default=clientes_disp, key="vinos_cliente")
+
+    if vf_meses:
+        df_v_act = df_v_act[df_v_act['Mes'].isin(vf_meses)]
+        df_v_ant = df_v_ant[df_v_ant['Mes'].isin(vf_meses)]
+    if vf_canal:
+        df_v_act = df_v_act[df_v_act['Canal de ventas'].isin(vf_canal)]
+        df_v_ant = df_v_ant[df_v_ant['Canal de ventas'].isin(vf_canal)]
+    if vf_marca:
+        df_v_act = df_v_act[df_v_act['Marca'].isin(vf_marca)]
+        df_v_ant = df_v_ant[df_v_ant['Marca'].isin(vf_marca)]
+    if vf_cliente:
+        df_v_act = df_v_act[df_v_act['Razon Social'].isin(vf_cliente)]
+        df_v_ant = df_v_ant[df_v_ant['Razon Social'].isin(vf_cliente)]
+
+    # --- KPIs ---
     render_kpis(df_v_act, df_v_ant)
-    st.markdown("")
 
-    col1, col2 = st.columns(2)
-
-    with col1:
-        section(f"VENTAS POR CATEGORÍA — {año_act} vs {año_ant}")
-        comp_cat = build_comparison_df(df_v_act, df_v_ant, 'Categoria', año_act, año_ant)
-        render_comparison_table(comp_cat, 'Categoria', año_act, año_ant, f'Neto_{año_act}')
-
-    with col2:
-        section(f"VENTAS POR MES — {año_act} vs {año_ant}")
-        comp_mes = build_comparison_df(df_v_act, df_v_ant, 'Mes', año_act, año_ant)
-        comp_mes = comp_mes.sort_values('Mes')
+    # --- Preparar todas las tablas comparativas ---
+    comp_canal = build_comparison_df(df_v_act, df_v_ant, 'Canal de ventas', año_act, año_ant)
+    comp_cat = build_comparison_df(df_v_act, df_v_ant, 'Categoria', año_act, año_ant)
+    comp_mes_raw = build_comparison_df(df_v_act, df_v_ant, 'Mes', año_act, año_ant)
+    comp_mes_raw = comp_mes_raw.sort_values('Mes') if len(comp_mes_raw) > 0 else comp_mes_raw
+    comp_mes = comp_mes_raw.copy()
+    if len(comp_mes) > 0:
         comp_mes['Mes'] = comp_mes['Mes'].map(MESES)
-        render_comparison_table(comp_mes, 'Mes', año_act, año_ant)
-
-    # Ventas por Marca de Vino
-    section(f"RANKING POR MARCA — VINOS {año_act} vs {año_ant}")
     comp_marca = build_comparison_df(df_v_act, df_v_ant, 'Marca', año_act, año_ant)
-    render_comparison_table(comp_marca, 'Marca', año_act, año_ant, f'Neto_{año_act}')
 
-    # Cepa analysis if available
+    comp_cepa = None
     if 'Cepa' in df_v_act.columns:
         cepas_act = df_v_act[df_v_act['Cepa'].astype(str) != '0']
         if len(cepas_act) > 0:
-            section(f"VENTAS POR CEPA — {año_act}")
             cepas_ant = df_v_ant[df_v_ant['Cepa'].astype(str) != '0']
             comp_cepa = build_comparison_df(cepas_act, cepas_ant, 'Cepa', año_act, año_ant)
-            render_comparison_table(comp_cepa, 'Cepa', año_act, año_ant, f'Neto_{año_act}')
 
-    # Linea Vino if available
+    comp_linea = None
     if 'Linea Vino' in df_v_act.columns:
         lineas_act = df_v_act[df_v_act['Linea Vino'].astype(str) != '0']
         if len(lineas_act) > 0:
-            section(f"VENTAS POR LÍNEA DE VINO — {año_act}")
             lineas_ant = df_v_ant[df_v_ant['Linea Vino'].astype(str) != '0']
             comp_linea = build_comparison_df(lineas_act, lineas_ant, 'Linea Vino', año_act, año_ant)
-            render_comparison_table(comp_linea, 'Linea Vino', año_act, año_ant, f'Neto_{año_act}')
 
+    df_v_super_act = df_v_act[df_v_act['Canal de ventas'] == 'Supermercado']
+    df_v_super_ant = df_v_ant[df_v_ant['Canal de ventas'] == 'Supermercado']
+    comp_cli_super = build_comparison_df(df_v_super_act, df_v_super_ant, 'Razon Social', año_act, año_ant) if len(df_v_super_act) > 0 else pd.DataFrame()
+
+    df_v_mayor_act = df_v_act[df_v_act['Canal de ventas'] == 'Mayorista']
+    df_v_mayor_ant = df_v_ant[df_v_ant['Canal de ventas'] == 'Mayorista']
+    comp_cli_mayor = build_comparison_df(df_v_mayor_act, df_v_mayor_ant, 'Razon Social', año_act, año_ant) if len(df_v_mayor_act) > 0 else pd.DataFrame()
+
+    # --- Botón descarga Excel ---
+    sheets = {}
+    if len(comp_canal) > 0:
+        sheets['Por Canal'] = (comp_canal, 'Canal de ventas')
+    if len(comp_cat) > 0:
+        sheets['Por Categoria'] = (comp_cat, 'Categoria')
+    if len(comp_mes_raw) > 0:
+        comp_mes_xl = comp_mes_raw.copy()
+        comp_mes_xl['Mes'] = comp_mes_xl['Mes'].map(MESES)
+        sheets['Por Mes'] = (comp_mes_xl, 'Mes')
+    if len(comp_marca) > 0:
+        sheets['Por Marca'] = (comp_marca, 'Marca')
+    if comp_cepa is not None and len(comp_cepa) > 0:
+        sheets['Por Cepa'] = (comp_cepa, 'Cepa')
+    if comp_linea is not None and len(comp_linea) > 0:
+        sheets['Por Linea Vino'] = (comp_linea, 'Linea Vino')
+    if len(comp_cli_super) > 0:
+        sheets['Clientes Supermercado'] = (comp_cli_super, 'Razon Social')
+    if len(comp_cli_mayor) > 0:
+        sheets['Clientes Mayorista'] = (comp_cli_mayor, 'Razon Social')
+
+    if sheets:
+        excel_vinos = generar_excel_vinos(sheets, año_act, año_ant)
+        st.download_button(
+            label="📥 Descargar Excel Vinos",
+            data=excel_vinos,
+            file_name=f"resumen_vinos_{año_act}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="vinos_excel_dl",
+        )
+
+    st.markdown("")
+
+    # --- Ventas por Canal ---
+    section(f"VENTAS POR CANAL — VINOS {año_act} vs {año_ant}")
+    render_sortable_comparison_table(comp_canal, 'Canal de ventas', año_act, año_ant,
+                                     default_sort=f'Neto_{año_act}', key_prefix="v")
+
+    # --- Categoría y Mes lado a lado ---
+    col1, col2 = st.columns(2)
+    with col1:
+        section(f"VENTAS POR CATEGORÍA — {año_act} vs {año_ant}")
+        render_sortable_comparison_table(comp_cat, 'Categoria', año_act, año_ant,
+                                         default_sort=f'Neto_{año_act}', key_prefix="v")
+    with col2:
+        section(f"VENTAS POR MES — {año_act} vs {año_ant}")
+        render_comparison_table(comp_mes, 'Mes', año_act, año_ant)
+
+    # --- Marca ---
+    section(f"RANKING POR MARCA — VINOS {año_act} vs {año_ant}")
+    render_sortable_comparison_table(comp_marca, 'Marca', año_act, año_ant,
+                                     default_sort=f'Neto_{año_act}', key_prefix="v")
+
+    # --- Cepa ---
+    if comp_cepa is not None and len(comp_cepa) > 0:
+        section(f"VENTAS POR CEPA — {año_act} vs {año_ant}")
+        render_sortable_comparison_table(comp_cepa, 'Cepa', año_act, año_ant,
+                                         default_sort=f'Neto_{año_act}', key_prefix="v")
+
+    # --- Línea Vino ---
+    if comp_linea is not None and len(comp_linea) > 0:
+        section(f"VENTAS POR LÍNEA DE VINO — {año_act} vs {año_ant}")
+        render_sortable_comparison_table(comp_linea, 'Linea Vino', año_act, año_ant,
+                                         default_sort=f'Neto_{año_act}', key_prefix="v")
+
+    # --- Tendencia mensual ---
     section("TENDENCIA MENSUAL VINOS (MM$)")
     mes_v_act = df_v_act.groupby('Mes')['Neto_Final'].sum().reset_index().sort_values('Mes')
     mes_v_ant = df_v_ant.groupby('Mes')['Neto_Final'].sum().reset_index().sort_values('Mes')
@@ -1296,6 +1568,22 @@ def tab_vinos(df, df_act, df_ant, año_act, año_ant):
         font=dict(family='Inter'), legend=dict(orientation='h', y=1.12))
     fig.update_yaxes(tickformat=',.0f', gridcolor='#f0f0f0')
     st.plotly_chart(fig, use_container_width=True)
+
+    # --- Clientes Supermercado ---
+    section(f"DETALLE CLIENTES SUPERMERCADO — VINOS {año_act} vs {año_ant}")
+    if len(comp_cli_super) > 0:
+        render_sortable_comparison_table(comp_cli_super, 'Razon Social', año_act, año_ant,
+                                         default_sort=f'Neto_{año_act}', key_prefix="v_super")
+    else:
+        st.info("Sin ventas de vino en canal Supermercado para el periodo seleccionado")
+
+    # --- Clientes Mayorista ---
+    section(f"DETALLE CLIENTES MAYORISTA — VINOS {año_act} vs {año_ant}")
+    if len(comp_cli_mayor) > 0:
+        render_sortable_comparison_table(comp_cli_mayor, 'Razon Social', año_act, año_ant,
+                                         default_sort=f'Neto_{año_act}', key_prefix="v_mayor")
+    else:
+        st.info("Sin ventas de vino en canal Mayorista para el periodo seleccionado")
 
 
 # ============================================================
