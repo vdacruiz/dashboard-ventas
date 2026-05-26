@@ -1415,49 +1415,14 @@ def tab_vinos(df, df_act, df_ant, año_act, año_ant):
     df_v_act = df_act[df_act['Categoria'].isin(cats_vino)].copy()
     df_v_ant = df_ant[df_ant['Categoria'].isin(cats_vino)].copy()
 
-    # --- Filtros locales de Vinos ---
-    meses_disp = sorted(df_v_act['Mes'].unique()) if len(df_v_act) > 0 else list(range(1, 13))
-    canales_disp = sorted(df_v_act['Canal de ventas'].dropna().unique().tolist()) if len(df_v_act) > 0 else []
-    marcas_disp = sorted(df_v_act['Marca'].dropna().unique().tolist()) if len(df_v_act) > 0 else []
-    clientes_disp = sorted(df_v_act['Razon Social'].dropna().unique().tolist()) if len(df_v_act) > 0 else []
-
-    with st.expander("🎛️ Filtros Vinos", expanded=True):
-        fc1, fc2, fc3, fc4 = st.columns(4)
-        with fc1:
-            vf_meses = st.multiselect(
-                "Mes(es)", meses_disp, default=meses_disp,
-                format_func=lambda x: MESES.get(x, str(x)), key="vinos_meses")
-        with fc2:
-            vf_canal = st.multiselect("Canal", canales_disp, default=canales_disp, key="vinos_canal")
-        with fc3:
-            vf_marca = st.multiselect("Marca", marcas_disp, default=marcas_disp, key="vinos_marca")
-        with fc4:
-            vf_cliente = st.multiselect("Cliente", clientes_disp, default=clientes_disp, key="vinos_cliente")
-
-    if vf_meses:
-        df_v_act = df_v_act[df_v_act['Mes'].isin(vf_meses)]
-        df_v_ant = df_v_ant[df_v_ant['Mes'].isin(vf_meses)]
-    if vf_canal:
-        df_v_act = df_v_act[df_v_act['Canal de ventas'].isin(vf_canal)]
-        df_v_ant = df_v_ant[df_v_ant['Canal de ventas'].isin(vf_canal)]
-    if vf_marca:
-        df_v_act = df_v_act[df_v_act['Marca'].isin(vf_marca)]
-        df_v_ant = df_v_ant[df_v_ant['Marca'].isin(vf_marca)]
-    if vf_cliente:
-        df_v_act = df_v_act[df_v_act['Razon Social'].isin(vf_cliente)]
-        df_v_ant = df_v_ant[df_v_ant['Razon Social'].isin(vf_cliente)]
-
-    # --- KPIs ---
     render_kpis(df_v_act, df_v_ant)
 
-    # --- Preparar todas las tablas comparativas ---
+    # --- Excel Vinos ---
     comp_canal = build_comparison_df(df_v_act, df_v_ant, 'Canal de ventas', año_act, año_ant)
     comp_cat = build_comparison_df(df_v_act, df_v_ant, 'Categoria', año_act, año_ant)
     comp_mes_raw = build_comparison_df(df_v_act, df_v_ant, 'Mes', año_act, año_ant)
-    comp_mes_raw = comp_mes_raw.sort_values('Mes') if len(comp_mes_raw) > 0 else comp_mes_raw
-    comp_mes = comp_mes_raw.copy()
-    if len(comp_mes) > 0:
-        comp_mes['Mes'] = comp_mes['Mes'].map(MESES)
+    if len(comp_mes_raw) > 0:
+        comp_mes_raw = comp_mes_raw.sort_values('Mes')
     comp_marca = build_comparison_df(df_v_act, df_v_ant, 'Marca', año_act, año_ant)
 
     comp_cepa = None
@@ -1482,7 +1447,6 @@ def tab_vinos(df, df_act, df_ant, año_act, año_ant):
     df_v_mayor_ant = df_v_ant[df_v_ant['Canal de ventas'] == 'Mayorista']
     comp_cli_mayor = build_comparison_df(df_v_mayor_act, df_v_mayor_ant, 'Razon Social', año_act, año_ant) if len(df_v_mayor_act) > 0 else pd.DataFrame()
 
-    # --- Botón descarga Excel ---
     sheets = {}
     if len(comp_canal) > 0:
         sheets['Por Canal'] = (comp_canal, 'Canal de ventas')
@@ -1515,39 +1479,31 @@ def tab_vinos(df, df_act, df_ant, año_act, año_ant):
 
     st.markdown("")
 
-    # --- Ventas por Canal ---
-    section(f"VENTAS POR CANAL — VINOS {año_act} vs {año_ant}")
-    render_sortable_comparison_table(comp_canal, 'Canal de ventas', año_act, año_ant,
-                                     default_sort=f'Neto_{año_act}', key_prefix="v")
-
-    # --- Categoría y Mes lado a lado ---
+    # --- Tablas originales ---
     col1, col2 = st.columns(2)
+
     with col1:
         section(f"VENTAS POR CATEGORÍA — {año_act} vs {año_ant}")
-        render_sortable_comparison_table(comp_cat, 'Categoria', año_act, año_ant,
-                                         default_sort=f'Neto_{año_act}', key_prefix="v")
+        render_comparison_table(comp_cat, 'Categoria', año_act, año_ant, f'Neto_{año_act}')
+
     with col2:
         section(f"VENTAS POR MES — {año_act} vs {año_ant}")
+        comp_mes = comp_mes_raw.copy()
+        if len(comp_mes) > 0:
+            comp_mes['Mes'] = comp_mes['Mes'].map(MESES)
         render_comparison_table(comp_mes, 'Mes', año_act, año_ant)
 
-    # --- Marca ---
     section(f"RANKING POR MARCA — VINOS {año_act} vs {año_ant}")
-    render_sortable_comparison_table(comp_marca, 'Marca', año_act, año_ant,
-                                     default_sort=f'Neto_{año_act}', key_prefix="v")
+    render_comparison_table(comp_marca, 'Marca', año_act, año_ant, f'Neto_{año_act}')
 
-    # --- Cepa ---
     if comp_cepa is not None and len(comp_cepa) > 0:
-        section(f"VENTAS POR CEPA — {año_act} vs {año_ant}")
-        render_sortable_comparison_table(comp_cepa, 'Cepa', año_act, año_ant,
-                                         default_sort=f'Neto_{año_act}', key_prefix="v")
+        section(f"VENTAS POR CEPA — {año_act}")
+        render_comparison_table(comp_cepa, 'Cepa', año_act, año_ant, f'Neto_{año_act}')
 
-    # --- Línea Vino ---
     if comp_linea is not None and len(comp_linea) > 0:
-        section(f"VENTAS POR LÍNEA DE VINO — {año_act} vs {año_ant}")
-        render_sortable_comparison_table(comp_linea, 'Linea Vino', año_act, año_ant,
-                                         default_sort=f'Neto_{año_act}', key_prefix="v")
+        section(f"VENTAS POR LÍNEA DE VINO — {año_act}")
+        render_comparison_table(comp_linea, 'Linea Vino', año_act, año_ant, f'Neto_{año_act}')
 
-    # --- Tendencia mensual ---
     section("TENDENCIA MENSUAL VINOS (MM$)")
     mes_v_act = df_v_act.groupby('Mes')['Neto_Final'].sum().reset_index().sort_values('Mes')
     mes_v_ant = df_v_ant.groupby('Mes')['Neto_Final'].sum().reset_index().sort_values('Mes')
@@ -1568,22 +1524,6 @@ def tab_vinos(df, df_act, df_ant, año_act, año_ant):
         font=dict(family='Inter'), legend=dict(orientation='h', y=1.12))
     fig.update_yaxes(tickformat=',.0f', gridcolor='#f0f0f0')
     st.plotly_chart(fig, use_container_width=True)
-
-    # --- Clientes Supermercado ---
-    section(f"DETALLE CLIENTES SUPERMERCADO — VINOS {año_act} vs {año_ant}")
-    if len(comp_cli_super) > 0:
-        render_sortable_comparison_table(comp_cli_super, 'Razon Social', año_act, año_ant,
-                                         default_sort=f'Neto_{año_act}', key_prefix="v_super")
-    else:
-        st.info("Sin ventas de vino en canal Supermercado para el periodo seleccionado")
-
-    # --- Clientes Mayorista ---
-    section(f"DETALLE CLIENTES MAYORISTA — VINOS {año_act} vs {año_ant}")
-    if len(comp_cli_mayor) > 0:
-        render_sortable_comparison_table(comp_cli_mayor, 'Razon Social', año_act, año_ant,
-                                         default_sort=f'Neto_{año_act}', key_prefix="v_mayor")
-    else:
-        st.info("Sin ventas de vino en canal Mayorista para el periodo seleccionado")
 
 
 # ============================================================
